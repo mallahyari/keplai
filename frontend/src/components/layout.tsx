@@ -31,6 +31,8 @@ export function Layout({ children }: { children: ReactNode }) {
             <NavLink href="/">Triples</NavLink>
             <NavLink href="/ontology">Ontology</NavLink>
             <NavLink href="/extraction">Extraction</NavLink>
+            <NavLink href="/query">Query</NavLink>
+            <NavLink href="/explorer">Explorer</NavLink>
           </nav>
         </div>
         <Badge variant={status?.healthy ? "default" : "destructive"}>

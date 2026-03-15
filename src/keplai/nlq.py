@@ -1,0 +1,152 @@
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Any, TYPE_CHECKING
+
+from openai import OpenAI
+
+if TYPE_CHECKING:
+    from keplai.config import KeplAISettings
+    from keplai.graph import KeplAI
+
+logger = logging.getLogger(__name__)
+
+_FORBIDDEN_PATTERNS = re.compile(
+    r"\b(INSERT|DELETE|DROP|CLEAR|LOAD|CREATE|COPY|MOVE|ADD)\b",
+    re.IGNORECASE,
+)
+
+
+class NLQueryEngine:
+    """Translate natural-language questions into SPARQL and execute them."""
+
+    def __init__(self, settings: KeplAISettings, graph: KeplAI) -> None:
+        self._settings = settings
+        self._graph = graph
+        self._client = OpenAI(api_key=settings.openai_api_key)
+
+    def ask(self, question: str) -> dict[str, Any]:
+        """Answer a natural-language question against the knowledge graph.
+
+        Returns:
+            {"results": [...], "sparql": "<generated query>"}
+        """
+        schema = self._graph.ontology.get_schema()
+        sample_entities = self._get_sample_entities()
+
+        sparql = self._generate_sparql(question, schema, sample_entities)
+        self._validate_read_only(sparql)
+
+        results = self._graph._execute_query(sparql)
+        return {"results": results, "sparql": sparql}
+
+    def ask_with_explanation(self, question: str) -> dict[str, Any]:
+        """Answer a question and provide an explanation of the results.
+
+        Returns:
+            {"results": [...], "sparql": "<generated query>", "explanation": "..."}
+        """
+        answer = self.ask(question)
+        explanation = self._explain_results(question, answer["results"], answer["sparql"])
+        answer["explanation"] = explanation
+        return answer
+
+    def execute_sparql(self, sparql: str) -> list[dict[str, str]]:
+        """Execute a raw SPARQL SELECT query (read-only enforced)."""
+        self._validate_read_only(sparql)
+        return self._graph._execute_query(sparql)
+
+    def _generate_sparql(
+        self,
+        question: str,
+        schema: dict[str, Any],
+        sample_entities: list[str],
+    ) -> str:
+        classes = [c["name"] for c in schema.get("classes", [])]
+        properties = schema.get("properties", [])
+
+        prop_lines = []
+        for p in properties:
+            prop_lines.append(f"  - {p['name']}: domain={p.get('domain', '?')}, range={p.get('range', '?')}")
+
+        system_prompt = (
+            "You are a SPARQL query generator for a knowledge graph.\n\n"
+            "GRAPH SCHEMA:\n"
+            f"Entity namespace: {self._graph._settings.entity_namespace}\n"
+            f"Ontology namespace: {self._graph._settings.ontology_namespace}\n"
+            f"Classes: {', '.join(classes) if classes else '(none)'}\n"
+            f"Properties:\n{''.join(prop_lines) if prop_lines else '  (none)'}\n"
+            f"Sample entities: {', '.join(sample_entities[:20]) if sample_entities else '(none)'}\n\n"
+            "RULES:\n"
+            "- Generate ONLY a SELECT query. Never INSERT, DELETE, DROP, or modify data.\n"
+            "- Use the entity namespace for entity URIs and ontology namespace for predicates.\n"
+            "- Return ONLY the SPARQL query, no explanation or markdown.\n"
+            "- Use PREFIX declarations for cleaner queries.\n"
+        )
+
+        response = self._client.chat.completions.create(
+            model=self._settings.openai_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question},
+            ],
+            temperature=0.0,
+        )
+
+        sparql = response.choices[0].message.content or ""
+        # Strip markdown code fences if present
+        sparql = re.sub(r"^```(?:sparql)?\s*", "", sparql.strip())
+        sparql = re.sub(r"\s*```$", "", sparql.strip())
+        return sparql.strip()
+
+    def _explain_results(
+        self,
+        question: str,
+        results: list[dict[str, str]],
+        sparql: str,
+    ) -> str:
+        system_prompt = (
+            "You are explaining knowledge graph query results to a user. "
+            "Be concise and clear. Mention if results come from inferred (reasoned) vs. asserted facts."
+        )
+        user_msg = (
+            f"Question: {question}\n"
+            f"SPARQL used: {sparql}\n"
+            f"Results: {json.dumps(results[:50])}\n\n"
+            "Explain these results in 2-3 sentences."
+        )
+
+        response = self._client.chat.completions.create(
+            model=self._settings.openai_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.3,
+        )
+        return response.choices[0].message.content or ""
+
+    def _get_sample_entities(self, limit: int = 20) -> list[str]:
+        """Fetch a sample of entity names from the graph."""
+        sparql = (
+            f"SELECT DISTINCT ?s WHERE {{ "
+            f"?s ?p ?o . "
+            f"FILTER(STRSTARTS(STR(?s), \"{self._graph._settings.entity_namespace}\")) "
+            f"}} LIMIT {limit}"
+        )
+        try:
+            rows = self._graph._execute_query(sparql)
+            ns = self._graph._settings.entity_namespace
+            return [r["s"].replace(ns, "") for r in rows if "s" in r]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _validate_read_only(sparql: str) -> None:
+        """Reject any SPARQL that attempts to modify the graph."""
+        if _FORBIDDEN_PATTERNS.search(sparql):
+            raise ValueError(
+                "Only read-only SPARQL queries (SELECT/ASK/CONSTRUCT/DESCRIBE) are allowed."
+            )

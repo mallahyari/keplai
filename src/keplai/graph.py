@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from keplai.ontology import OntologyManager
     from keplai.extractor import AIExtractor
     from keplai.disambiguator import EntityDisambiguator
+    from keplai.nlq import NLQueryEngine
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class KeplAI:
         self._ontology: OntologyManager | None = None
         self._extractor: AIExtractor | None = None
         self._disambiguator: EntityDisambiguator | None = None
+        self._nlq: NLQueryEngine | None = None
 
     @property
     def ontology(self) -> OntologyManager:
@@ -57,6 +59,22 @@ class KeplAI:
             )
             self._disambiguator = EntityDisambiguator(self._settings, store)
         return self._disambiguator
+
+    @property
+    def nlq(self) -> NLQueryEngine:
+        """Access the natural-language query engine (lazy-loaded)."""
+        if self._nlq is None:
+            from keplai.nlq import NLQueryEngine
+            self._nlq = NLQueryEngine(self._settings, self)
+        return self._nlq
+
+    def ask(self, question: str) -> dict[str, Any]:
+        """Ask a natural-language question against the knowledge graph."""
+        return self.nlq.ask(question)
+
+    def ask_with_explanation(self, question: str) -> dict[str, Any]:
+        """Ask a question and get results with an explanation."""
+        return self.nlq.ask_with_explanation(question)
 
     # ------------------------------------------------------------------
     # Lifecycle

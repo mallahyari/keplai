@@ -80,3 +80,27 @@ export interface SimilarEntity {
   name: string;
   score: number;
 }
+
+// Query types
+
+export interface QueryResult {
+  results: Record<string, string>[];
+  sparql: string;
+}
+
+export interface QueryResultWithExplanation extends QueryResult {
+  explanation: string;
+}
+
+// Graph explorer types
+
+export interface GraphNode {
+  id: string;
+  label: string;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  label: string;
+}

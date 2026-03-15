@@ -10,6 +10,8 @@ import type {
   PreviewTriple,
   Entity,
   SimilarEntity,
+  QueryResult,
+  QueryResultWithExplanation,
 } from "@/types/graph";
 
 const BASE = "/api/graph";
@@ -101,4 +103,23 @@ export const api = {
 
   getSimilarEntities: (name: string) =>
     request<SimilarEntity[]>(`/api/entities/${encodeURIComponent(name)}/similar`),
+
+  // Query
+  ask: (question: string) =>
+    request<QueryResult>("/api/query/ask", {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+
+  askWithExplanation: (question: string) =>
+    request<QueryResultWithExplanation>("/api/query/ask/explain", {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+
+  executeSparql: (sparql: string) =>
+    request<QueryResult>("/api/query/sparql", {
+      method: "POST",
+      body: JSON.stringify({ sparql }),
+    }),
 };

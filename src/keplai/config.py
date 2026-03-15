@@ -1,8 +1,9 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
 class KeplAISettings(BaseSettings):
-    model_config = {"env_prefix": "KEPLAI_"}
+    model_config = {"env_prefix": "KEPLAI_", "populate_by_name": True}
 
     # Fuseki / Docker
     fuseki_image: str = "stain/jena-fuseki"
@@ -18,14 +19,26 @@ class KeplAISettings(BaseSettings):
     # Reasoner
     reasoner: str = "OWL"
 
-    # AI / LLM
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o"
-    embedding_model: str = "text-embedding-3-small"
+    # AI / LLM — reads OPENAI_API_KEY (no KEPLAI_ prefix)
+    openai_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPENAI_API_KEY", "KEPLAI_OPENAI_API_KEY"),
+    )
+    openai_model: str = Field(
+        default="gpt-4o",
+        validation_alias=AliasChoices("OPENAI_MODEL", "KEPLAI_OPENAI_MODEL"),
+    )
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        validation_alias=AliasChoices("EMBEDDING_MODEL", "KEPLAI_EMBEDDING_MODEL"),
+    )
     embedding_dim: int = 1536
 
     # Entity Disambiguation
-    disambiguation_threshold: float = 0.90
+    disambiguation_threshold: float = Field(
+        default=0.90,
+        validation_alias=AliasChoices("DISAMBIGUATION_THRESHOLD", "KEPLAI_DISAMBIGUATION_THRESHOLD"),
+    )
 
     # Qdrant
     qdrant_path: str | None = None  # None = in-memory

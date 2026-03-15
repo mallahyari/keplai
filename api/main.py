@@ -7,6 +7,7 @@ from api.dependencies import set_graph
 from api.routers import graph as graph_router
 from api.routers import ontology as ontology_router
 from api.routers import extraction as extraction_router
+from api.routers import query as query_router
 from keplai import KeplAI
 
 
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(graph_router.router)
 app.include_router(ontology_router.router)
 app.include_router(extraction_router.router)
+app.include_router(query_router.router)
 
 if __name__ == "__main__":
     import uvicorn

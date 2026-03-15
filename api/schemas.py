@@ -98,3 +98,24 @@ class EntityOut(BaseModel):
 class SimilarEntityOut(BaseModel):
     name: str
     score: float
+
+
+# -- Query schemas --
+
+class AskRequest(BaseModel):
+    question: str
+
+
+class SparqlRequest(BaseModel):
+    sparql: str
+
+
+class QueryResult(BaseModel):
+    results: list[dict[str, str]]
+    sparql: str
+
+
+class QueryResultWithExplanation(BaseModel):
+    results: list[dict[str, str]]
+    sparql: str
+    explanation: str
