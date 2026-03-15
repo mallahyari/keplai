@@ -1,0 +1,100 @@
+from pydantic import BaseModel
+
+
+class TripleIn(BaseModel):
+    subject: str
+    predicate: str
+    object: str | int | float
+
+
+class TripleOut(BaseModel):
+    subject: str
+    predicate: str
+    object: str
+
+
+class TripleQuery(BaseModel):
+    subject: str | None = None
+    predicate: str | None = None
+    object: str | None = None
+
+
+class StatusResponse(BaseModel):
+    engine: str
+    healthy: bool
+    endpoint: str
+    dataset: str
+
+
+# -- Ontology schemas --
+
+class ClassIn(BaseModel):
+    name: str
+
+
+class ClassOut(BaseModel):
+    uri: str
+    name: str
+
+
+class PropertyIn(BaseModel):
+    name: str
+    domain: str
+    range: str
+
+
+class PropertyOut(BaseModel):
+    uri: str
+    name: str
+    domain: str
+    range: str
+
+
+class SchemaOut(BaseModel):
+    classes: list[ClassOut]
+    properties: list[PropertyOut]
+
+
+# -- Extraction schemas --
+
+class ExtractionRequest(BaseModel):
+    text: str
+    mode: str = "strict"
+
+
+class DisambiguationInfo(BaseModel):
+    subject_original: str
+    subject_matched: str | None = None
+    subject_score: float | None = None
+    object_original: str
+    object_matched: str | None = None
+    object_score: float | None = None
+
+
+class ExtractedTripleOut(BaseModel):
+    subject: str
+    predicate: str
+    object: str
+    disambiguation: DisambiguationInfo
+
+
+class CandidateMatch(BaseModel):
+    name: str
+    score: float
+
+
+class PreviewTripleOut(BaseModel):
+    subject: str
+    predicate: str
+    object: str
+    subject_candidates: list[CandidateMatch] = []
+    object_candidates: list[CandidateMatch] = []
+
+
+class EntityOut(BaseModel):
+    name: str
+
+
+class SimilarEntityOut(BaseModel):
+    name: str
+    score: float
