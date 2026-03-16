@@ -202,11 +202,27 @@ class KeplAI:
     # ------------------------------------------------------------------
 
     def add(self, subject: str, predicate: str, obj: str | int | float) -> None:
-        """Insert a single triple into the graph."""
+        """Insert a single triple into the graph.
+
+        If the predicate resolves to an imported ontology property,
+        automatically asserts rdf:type for subject (from rdfs:domain)
+        and object (from rdfs:range) so instances are properly typed.
+        """
         s = self._to_entity_uri(subject)
         p = self._to_predicate_uri(predicate)
         o = self._to_object(obj)
-        sparql = f"INSERT DATA {{ {s.n3()} {p.n3()} {o.n3()} }}"
+
+        # Build all triples to insert (main triple + auto-typing)
+        parts = [f"{s.n3()} {p.n3()} {o.n3()} ."]
+
+        # Auto-assert rdf:type from domain/range if predicate is from an ontology
+        domain, range_ = self._get_property_domain_range(p)
+        if domain is not None:
+            parts.append(f"{s.n3()} {RDF.type.n3()} {domain.n3()} .")
+        if range_ is not None and isinstance(o, URIRef):
+            parts.append(f"{o.n3()} {RDF.type.n3()} {range_.n3()} .")
+
+        sparql = "INSERT DATA { " + " ".join(parts) + " }"
         self._execute_update(sparql)
         logger.debug("Added triple: %s %s %s", subject, predicate, obj)
 
@@ -307,6 +323,26 @@ class KeplAI:
         except Exception:
             pass
         return None
+
+    def _get_property_domain_range(self, prop_uri: URIRef) -> tuple[URIRef | None, URIRef | None]:
+        """Look up rdfs:domain and rdfs:range for a property URI."""
+        sparql = (
+            f"SELECT ?domain ?range WHERE {{ "
+            f"OPTIONAL {{ {prop_uri.n3()} {RDFS.domain.n3()} ?domain . "
+            f"  FILTER(isURI(?domain)) }} "
+            f"OPTIONAL {{ {prop_uri.n3()} {RDFS.range.n3()} ?range . "
+            f"  FILTER(isURI(?range)) }} "
+            f"}} LIMIT 1"
+        )
+        try:
+            rows = self._execute_query(sparql)
+            if rows:
+                domain = URIRef(rows[0]["domain"]) if rows[0].get("domain") else None
+                range_ = URIRef(rows[0]["range"]) if rows[0].get("range") else None
+                return domain, range_
+        except Exception:
+            pass
+        return None, None
 
     def _to_object(self, value: str | int | float) -> URIRef | Literal:
         """Auto-detect whether an object is a literal or an entity URI."""
