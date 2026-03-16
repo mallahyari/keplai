@@ -201,12 +201,21 @@ class KeplAI:
     # Triple CRUD
     # ------------------------------------------------------------------
 
-    def add(self, subject: str, predicate: str, obj: str | int | float) -> None:
-        """Insert a single triple into the graph.
+    def add(
+        self,
+        subject: str,
+        predicate: str,
+        obj: str | int | float,
+        graph_uri: str | None = None,
+    ) -> None:
+        """Insert a single triple into a named graph.
 
         If the predicate resolves to an imported ontology property,
         automatically asserts rdf:type for subject (from rdfs:domain)
         and object (from rdfs:range) so instances are properly typed.
+
+        Args:
+            graph_uri: Named graph to insert into. Defaults to data_graph.
         """
         s = self._to_entity_uri(subject)
         p = self._to_predicate_uri(predicate)
@@ -222,9 +231,11 @@ class KeplAI:
         if range_ is not None and isinstance(o, URIRef):
             parts.append(f"{o.n3()} {RDF.type.n3()} {range_.n3()} .")
 
-        sparql = "INSERT DATA { " + " ".join(parts) + " }"
+        target = graph_uri or self._settings.data_graph
+        triples_block = " ".join(parts)
+        sparql = f"INSERT DATA {{ GRAPH <{target}> {{ {triples_block} }} }}"
         self._execute_update(sparql)
-        logger.debug("Added triple: %s %s %s", subject, predicate, obj)
+        logger.debug("Added triple: %s %s %s (graph: %s)", subject, predicate, obj, target)
 
     def find(
         self,
@@ -264,18 +275,32 @@ class KeplAI:
 
         return self._execute_query(sparql)
 
-    def delete(self, subject: str, predicate: str, obj: str | int | float) -> None:
-        """Remove a single triple from the graph."""
+    def delete(
+        self,
+        subject: str,
+        predicate: str,
+        obj: str | int | float,
+        graph_uri: str | None = None,
+    ) -> None:
+        """Remove a single triple from a named graph."""
         s = self._to_entity_uri(subject)
         p = self._to_predicate_uri(predicate)
         o = self._to_object(obj)
-        sparql = f"DELETE DATA {{ {s.n3()} {p.n3()} {o.n3()} }}"
+        target = graph_uri or self._settings.data_graph
+        sparql = f"DELETE DATA {{ GRAPH <{target}> {{ {s.n3()} {p.n3()} {o.n3()} }} }}"
         self._execute_update(sparql)
-        logger.debug("Deleted triple: %s %s %s", subject, predicate, obj)
+        logger.debug("Deleted triple: %s %s %s (graph: %s)", subject, predicate, obj, target)
 
     def get_all_triples(self) -> list[dict[str, str]]:
-        """Return every triple in the graph."""
-        return self._execute_query("SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
+        """Return every triple across all named graphs (excluding metadata)."""
+        return self._execute_query(
+            f"SELECT ?s ?p ?o WHERE {{ "
+            f"{{ ?s ?p ?o }} "
+            f"UNION "
+            f"{{ GRAPH ?g {{ ?s ?p ?o }} "
+            f"   FILTER(?g != <{self._settings.metadata_graph}>) }} "
+            f"}}"
+        )
 
     # ------------------------------------------------------------------
     # Namespace helpers

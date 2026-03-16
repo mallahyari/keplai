@@ -26,12 +26,35 @@ class TestAddGeneratesSPARQL:
         # Verify SPARQLWrapper was called with the update URL
         mock_wrapper_cls.assert_called_with(g._engine.update_url)
 
-        # Verify the SPARQL query contains INSERT DATA
+        # Verify the SPARQL query contains INSERT DATA with GRAPH clause
         call_args = mock_instance.setQuery.call_args[0][0]
         assert "INSERT DATA" in call_args
+        assert "GRAPH" in call_args
         assert "keplai.io/entity/Mehdi" in call_args
         assert "keplai.io/ontology/founded" in call_args
         assert "keplai.io/entity/BrandPulse" in call_args
+
+    @patch("keplai.graph.SPARQLWrapper")
+    def test_add_uses_data_graph_by_default(self, mock_wrapper_cls):
+        mock_instance = MagicMock()
+        mock_wrapper_cls.return_value = mock_instance
+
+        g = _make_graph()
+        g.add("Alice", "knows", "Bob")
+
+        call_args = mock_instance.setQuery.call_args[0][0]
+        assert g._settings.data_graph in call_args
+
+    @patch("keplai.graph.SPARQLWrapper")
+    def test_add_with_explicit_graph_uri(self, mock_wrapper_cls):
+        mock_instance = MagicMock()
+        mock_wrapper_cls.return_value = mock_instance
+
+        g = _make_graph()
+        g.add("Alice", "knows", "Bob", graph_uri="http://example.org/graph/test")
+
+        call_args = mock_instance.setQuery.call_args[0][0]
+        assert "GRAPH <http://example.org/graph/test>" in call_args
 
 
 class TestDeleteGeneratesSPARQL:
@@ -45,7 +68,19 @@ class TestDeleteGeneratesSPARQL:
 
         call_args = mock_instance.setQuery.call_args[0][0]
         assert "DELETE DATA" in call_args
+        assert "GRAPH" in call_args
         assert "keplai.io/entity/Mehdi" in call_args
+
+    @patch("keplai.graph.SPARQLWrapper")
+    def test_delete_with_explicit_graph_uri(self, mock_wrapper_cls):
+        mock_instance = MagicMock()
+        mock_wrapper_cls.return_value = mock_instance
+
+        g = _make_graph()
+        g.delete("Mehdi", "founded", "BrandPulse", graph_uri="http://example.org/graph/test")
+
+        call_args = mock_instance.setQuery.call_args[0][0]
+        assert "GRAPH <http://example.org/graph/test>" in call_args
 
 
 class TestAddLiteralObject:
