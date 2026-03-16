@@ -19,3 +19,7 @@ class QueryError(KeplAIError):
 
 class DisambiguationError(KeplAIError):
     """Raised when entity disambiguation fails."""
+
+
+class OntologyImportError(KeplAIError):
+    """Raised when ontology file/URL import fails."""

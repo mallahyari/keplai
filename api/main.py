@@ -16,6 +16,7 @@ from keplai.exceptions import (
     ExtractionError,
     QueryError,
     DisambiguationError,
+    OntologyImportError,
 )
 
 
@@ -44,6 +45,7 @@ _ERROR_STATUS = {
     ExtractionError: 502,
     QueryError: 400,
     DisambiguationError: 502,
+    OntologyImportError: 400,
 }
 
 

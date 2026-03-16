@@ -5,6 +5,7 @@ from keplai.exceptions import (
     ExtractionError,
     QueryError,
     DisambiguationError,
+    OntologyImportError,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "ExtractionError",
     "QueryError",
     "DisambiguationError",
+    "OntologyImportError",
 ]
