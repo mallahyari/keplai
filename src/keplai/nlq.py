@@ -41,7 +41,11 @@ class NLQueryEngine:
         sparql = self._generate_sparql(question, schema, sample_entities)
         self._validate_read_only(sparql)
 
-        results = self._graph._execute_query(sparql)
+        try:
+            results = self._graph._execute_query(sparql)
+        except Exception as exc:
+            logger.error("SPARQL execution failed: %s\nQuery: %s", exc, sparql)
+            raise QueryError(f"SPARQL execution failed: {exc}") from exc
         return {"results": results, "sparql": sparql}
 
     def ask_with_explanation(self, question: str) -> dict[str, Any]:
@@ -98,6 +102,7 @@ class NLQueryEngine:
                 temperature=0.0,
             )
         except OpenAIError as exc:
+            logger.error("OpenAI call failed during SPARQL generation: %s", exc)
             raise QueryError(f"LLM call failed during SPARQL generation: {exc}") from exc
 
         sparql = response.choices[0].message.content or ""
@@ -123,14 +128,18 @@ class NLQueryEngine:
             "Explain these results in 2-3 sentences."
         )
 
-        response = self._client.chat.completions.create(
-            model=self._settings.openai_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.3,
-        )
+        try:
+            response = self._client.chat.completions.create(
+                model=self._settings.openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0.3,
+            )
+        except OpenAIError as exc:
+            logger.error("OpenAI call failed during explanation: %s", exc)
+            raise QueryError(f"LLM call failed during explanation: {exc}") from exc
         return response.choices[0].message.content or ""
 
     def _get_sample_entities(self, limit: int = 20) -> list[str]:
