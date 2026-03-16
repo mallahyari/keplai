@@ -16,6 +16,11 @@ class KeplAISettings(BaseSettings):
     entity_namespace: str = "http://keplai.io/entity/"
     ontology_namespace: str = "http://keplai.io/ontology/"
 
+    # Named graphs
+    metadata_graph: str = "http://keplai.io/graph/metadata"
+    data_graph: str = "http://keplai.io/graph/data"
+    graph_base_uri: str = "http://keplai.io/graph/"
+
     # Reasoner
     reasoner: str = "OWL"
 
