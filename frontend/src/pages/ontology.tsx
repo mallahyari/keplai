@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { OntologyClass, OntologyProperty } from "@/types/graph";
+import type { OntologyClass, OntologyProperty, OntologyImportResponse } from "@/types/graph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -26,6 +27,13 @@ export function OntologyPage() {
   const [propName, setPropName] = useState("");
   const [propDomain, setPropDomain] = useState("");
   const [propRange, setPropRange] = useState("");
+
+  // Import section
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<OntologyImportResponse | null>(null);
+  const [importError, setImportError] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -75,9 +83,106 @@ export function OntologyPage() {
     refresh();
   };
 
+  const handleFileUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) return;
+    setImporting(true);
+    setImportError("");
+    setImportResult(null);
+    try {
+      const result = await api.uploadOntologyFile(importFile);
+      setImportResult(result);
+      setImportFile(null);
+      const input = document.getElementById("ontology-file") as HTMLInputElement;
+      if (input) input.value = "";
+      refresh();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleUrlImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importUrl) return;
+    setImporting(true);
+    setImportError("");
+    setImportResult(null);
+    try {
+      const result = await api.importOntologyUrl(importUrl);
+      setImportResult(result);
+      setImportUrl("");
+      refresh();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <h2 className="text-2xl font-semibold tracking-tight">Ontology</h2>
+
+      {/* Import section */}
+      <section className="space-y-4">
+        <h3 className="text-lg font-medium">Import Ontology</h3>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* File upload */}
+          <form onSubmit={handleFileUpload} className="space-y-3 rounded-lg border p-4">
+            <p className="text-sm font-medium">Upload File</p>
+            <p className="text-xs text-muted-foreground">
+              Supports OWL/XML (.owl, .rdf), Turtle (.ttl), N-Triples (.nt), JSON-LD (.jsonld)
+            </p>
+            <Input
+              id="ontology-file"
+              type="file"
+              accept=".owl,.rdf,.xml,.ttl,.nt,.jsonld,.json"
+              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+            />
+            <Button type="submit" disabled={!importFile || importing}>
+              {importing ? "Uploading\u2026" : "Upload & Import"}
+            </Button>
+          </form>
+
+          {/* URL import */}
+          <form onSubmit={handleUrlImport} className="space-y-3 rounded-lg border p-4">
+            <p className="text-sm font-medium">Import from URL</p>
+            <p className="text-xs text-muted-foreground">
+              Fetch a remote ontology (e.g. schema.org, FOAF, Dublin Core)
+            </p>
+            <Input
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              placeholder="https://example.org/ontology.owl"
+            />
+            <Button type="submit" disabled={!importUrl || importing}>
+              {importing ? "Importing\u2026" : "Import from URL"}
+            </Button>
+          </form>
+        </div>
+
+        {importError && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {importError}
+          </div>
+        )}
+
+        {importResult && (
+          <div className="rounded-md border border-green-200 bg-green-50 p-4 space-y-2">
+            <p className="text-sm font-medium text-green-800">
+              Import successful — {importResult.triples_loaded} triples loaded (format: {importResult.format})
+            </p>
+            <p className="text-xs text-green-700">
+              Detected {importResult.classes.length} classes and {importResult.properties.length} properties
+            </p>
+          </div>
+        )}
+      </section>
+
+      <Separator />
 
       {/* Classes section */}
       <section className="space-y-4">

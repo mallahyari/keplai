@@ -56,7 +56,7 @@ export function ExplorerPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedTriples, setSelectedTriples] = useState<Triple[]>([]);
   const [loading, setLoading] = useState(true);
-  const graphRef = useRef<any>();
+  const graphRef = useRef<any>(null);
 
   const loadTriples = useCallback(async () => {
     setLoading(true);
