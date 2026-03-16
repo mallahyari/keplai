@@ -13,13 +13,13 @@ router = APIRouter(prefix="/api/query", tags=["query"])
 
 
 @router.post("/ask", response_model=QueryResult)
-def ask_question(req: AskRequest, graph: KeplAI = Depends(get_graph)):
-    return graph.ask(req.question)
+async def ask_question(req: AskRequest, graph: KeplAI = Depends(get_graph)):
+    return await graph.ask(req.question)
 
 
 @router.post("/ask/explain", response_model=QueryResultWithExplanation)
-def ask_with_explanation(req: AskRequest, graph: KeplAI = Depends(get_graph)):
-    return graph.ask_with_explanation(req.question)
+async def ask_with_explanation(req: AskRequest, graph: KeplAI = Depends(get_graph)):
+    return await graph.ask_with_explanation(req.question)
 
 
 @router.post("/sparql", response_model=QueryResult)

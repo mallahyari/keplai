@@ -68,13 +68,13 @@ class KeplAI:
             self._nlq = NLQueryEngine(self._settings, self)
         return self._nlq
 
-    def ask(self, question: str) -> dict[str, Any]:
+    async def ask(self, question: str) -> dict[str, Any]:
         """Ask a natural-language question against the knowledge graph."""
-        return self.nlq.ask(question)
+        return await self.nlq.ask(question)
 
-    def ask_with_explanation(self, question: str) -> dict[str, Any]:
+    async def ask_with_explanation(self, question: str) -> dict[str, Any]:
         """Ask a question and get results with an explanation."""
-        return self.nlq.ask_with_explanation(question)
+        return await self.nlq.ask_with_explanation(question)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -130,7 +130,7 @@ class KeplAI:
     # AI Extraction
     # ------------------------------------------------------------------
 
-    def extract_and_store(
+    async def extract_and_store(
         self,
         text: str,
         mode: str = "strict",
@@ -140,16 +140,16 @@ class KeplAI:
         Returns the list of stored triples with disambiguation info.
         """
         schema = self.ontology.get_schema() if mode == "strict" else None
-        raw_triples = self.extractor.extract(text, mode=mode, schema=schema)
+        raw_triples = await self.extractor.extract(text, mode=mode, schema=schema)
 
         results = []
         for t in raw_triples:
-            subj, subj_score, subj_match = self.disambiguator.resolve(t.subject)
+            subj, subj_score, subj_match = await self.disambiguator.resolve(t.subject)
             # Only disambiguate object if it looks like an entity (PascalCase, no spaces)
             obj = t.object
             obj_score, obj_match = None, None
             if obj and obj[0].isupper() and " " not in obj:
-                obj, obj_score, obj_match = self.disambiguator.resolve(obj)
+                obj, obj_score, obj_match = await self.disambiguator.resolve(obj)
 
             self.add(subj, t.predicate, obj)
 
@@ -170,22 +170,22 @@ class KeplAI:
         logger.info("Extracted and stored %d triples from text", len(results))
         return results
 
-    def extract_preview(
+    async def extract_preview(
         self,
         text: str,
         mode: str = "strict",
     ) -> list[dict[str, Any]]:
         """Extract triples from text with disambiguation preview — without storing."""
         schema = self.ontology.get_schema() if mode == "strict" else None
-        raw_triples = self.extractor.extract(text, mode=mode, schema=schema)
+        raw_triples = await self.extractor.extract(text, mode=mode, schema=schema)
 
         results = []
         for t in raw_triples:
             # Show what disambiguation *would* do without committing
-            subj_similar = self.disambiguator.get_similar(t.subject, top_k=3)
+            subj_similar = await self.disambiguator.get_similar(t.subject, top_k=3)
             obj_similar = []
             if t.object and t.object[0].isupper() and " " not in t.object:
-                obj_similar = self.disambiguator.get_similar(t.object, top_k=3)
+                obj_similar = await self.disambiguator.get_similar(t.object, top_k=3)
 
             results.append({
                 "subject": t.subject,

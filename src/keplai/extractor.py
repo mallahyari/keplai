@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, TYPE_CHECKING
 
-from openai import OpenAI, OpenAIError
+from openai import AsyncOpenAI, OpenAIError
 
 from keplai.exceptions import ExtractionError
 
@@ -34,9 +34,9 @@ class AIExtractor:
 
     def __init__(self, settings: KeplAISettings) -> None:
         self._settings = settings
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        self._client = AsyncOpenAI(api_key=settings.openai_api_key)
 
-    def extract(
+    async def extract(
         self,
         text: str,
         mode: str = "strict",
@@ -50,10 +50,10 @@ class AIExtractor:
             schema: The ontology schema dict (classes + properties). Required for strict mode.
         """
         if mode == "strict":
-            return self._extract_strict(text, schema or {})
-        return self._extract_open(text)
+            return await self._extract_strict(text, schema or {})
+        return await self._extract_open(text)
 
-    def _extract_strict(self, text: str, schema: dict[str, Any]) -> list[ExtractedTriple]:
+    async def _extract_strict(self, text: str, schema: dict[str, Any]) -> list[ExtractedTriple]:
         classes = [c["name"] for c in schema.get("classes", [])]
         properties = schema.get("properties", [])
 
@@ -77,9 +77,9 @@ class AIExtractor:
             "- Do NOT invent classes or properties not in the schema.\n"
         )
 
-        return self._call_llm(system_prompt, text)
+        return await self._call_llm(system_prompt, text)
 
-    def _extract_open(self, text: str) -> list[ExtractedTriple]:
+    async def _extract_open(self, text: str) -> list[ExtractedTriple]:
         system_prompt = (
             "You are a knowledge-graph triple extractor. "
             "Extract structured triples from the given text.\n\n"
@@ -92,11 +92,11 @@ class AIExtractor:
             "- If no triples can be extracted, return an empty array [].\n"
         )
 
-        return self._call_llm(system_prompt, text)
+        return await self._call_llm(system_prompt, text)
 
-    def _call_llm(self, system_prompt: str, text: str) -> list[ExtractedTriple]:
+    async def _call_llm(self, system_prompt: str, text: str) -> list[ExtractedTriple]:
         try:
-            response = self._client.chat.completions.create(
+            response = await self._client.chat.completions.create(
                 model=self._settings.openai_model,
                 messages=[
                     {"role": "system", "content": system_prompt},

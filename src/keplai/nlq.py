@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Any, TYPE_CHECKING
 
-from openai import OpenAI, OpenAIError
+from openai import AsyncOpenAI, OpenAIError
 
 from keplai.exceptions import QueryError
 
@@ -27,9 +27,9 @@ class NLQueryEngine:
     def __init__(self, settings: KeplAISettings, graph: KeplAI) -> None:
         self._settings = settings
         self._graph = graph
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        self._client = AsyncOpenAI(api_key=settings.openai_api_key)
 
-    def ask(self, question: str) -> dict[str, Any]:
+    async def ask(self, question: str) -> dict[str, Any]:
         """Answer a natural-language question against the knowledge graph.
 
         Returns:
@@ -38,7 +38,7 @@ class NLQueryEngine:
         schema = self._graph.ontology.get_schema()
         sample_entities = self._get_sample_entities()
 
-        sparql = self._generate_sparql(question, schema, sample_entities)
+        sparql = await self._generate_sparql(question, schema, sample_entities)
         self._validate_read_only(sparql)
 
         try:
@@ -48,14 +48,14 @@ class NLQueryEngine:
             raise QueryError(f"SPARQL execution failed: {exc}") from exc
         return {"results": results, "sparql": sparql}
 
-    def ask_with_explanation(self, question: str) -> dict[str, Any]:
+    async def ask_with_explanation(self, question: str) -> dict[str, Any]:
         """Answer a question and provide an explanation of the results.
 
         Returns:
             {"results": [...], "sparql": "<generated query>", "explanation": "..."}
         """
-        answer = self.ask(question)
-        explanation = self._explain_results(question, answer["results"], answer["sparql"])
+        answer = await self.ask(question)
+        explanation = await self._explain_results(question, answer["results"], answer["sparql"])
         answer["explanation"] = explanation
         return answer
 
@@ -64,7 +64,7 @@ class NLQueryEngine:
         self._validate_read_only(sparql)
         return self._graph._execute_query(sparql)
 
-    def _generate_sparql(
+    async def _generate_sparql(
         self,
         question: str,
         schema: dict[str, Any],
@@ -93,7 +93,7 @@ class NLQueryEngine:
         )
 
         try:
-            response = self._client.chat.completions.create(
+            response = await self._client.chat.completions.create(
                 model=self._settings.openai_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -114,7 +114,7 @@ class NLQueryEngine:
         sparql = re.sub(r"\s*```$", "", sparql.strip())
         return sparql.strip()
 
-    def _explain_results(
+    async def _explain_results(
         self,
         question: str,
         results: list[dict[str, str]],
@@ -132,7 +132,7 @@ class NLQueryEngine:
         )
 
         try:
-            response = self._client.chat.completions.create(
+            response = await self._client.chat.completions.create(
                 model=self._settings.openai_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
