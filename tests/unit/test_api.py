@@ -124,6 +124,8 @@ def test_get_schema(client):
 
 def test_upload_ontology_file(client, mock_graph):
     mock_graph.ontology.load_rdf.return_value = {
+        "ontology_id": "test-uuid",
+        "graph_uri": "http://keplai.io/graph/test-uuid",
         "triples_loaded": 10,
         "format": "turtle",
         "classes": [{"uri": "http://example.org/Person", "name": "Person"}],
@@ -136,11 +138,14 @@ def test_upload_ontology_file(client, mock_graph):
     assert resp.status_code == 200
     data = resp.json()
     assert data["triples_loaded"] == 10
+    assert data["ontology_id"] == "test-uuid"
     assert len(data["classes"]) == 1
 
 
 def test_import_ontology_from_url(client, mock_graph):
     mock_graph.ontology.load_url.return_value = {
+        "ontology_id": "url-uuid",
+        "graph_uri": "http://keplai.io/graph/url-uuid",
         "triples_loaded": 5,
         "format": "xml",
         "classes": [],
@@ -150,9 +155,56 @@ def test_import_ontology_from_url(client, mock_graph):
     assert resp.status_code == 200
     data = resp.json()
     assert data["triples_loaded"] == 5
-    mock_graph.ontology.load_url.assert_called_once_with("http://example.org/onto.owl")
+    mock_graph.ontology.load_url.assert_called_once_with("http://example.org/onto.owl", name=None)
 
 
 def test_upload_rejects_no_file(client):
     resp = client.post("/api/ontology/upload")
     assert resp.status_code == 422
+
+
+# -- Multi-ontology management --
+
+def test_list_ontologies(client, mock_graph):
+    mock_graph.ontology.list_ontologies.return_value = [
+        {
+            "id": "test-id",
+            "name": "Test Ontology",
+            "source": "test.ttl",
+            "graph_uri": "http://keplai.io/graph/test",
+            "import_date": "2026-03-15T00:00:00Z",
+            "classes_count": 2,
+            "properties_count": 3,
+        }
+    ]
+    resp = client.get("/api/ontology/ontologies")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "Test Ontology"
+    assert data[0]["graph_uri"] == "http://keplai.io/graph/test"
+
+
+def test_delete_ontology(client, mock_graph):
+    mock_graph.ontology.delete_ontology = MagicMock()
+    resp = client.delete(
+        "/api/ontology/ontologies/test-id",
+        params={"graph_uri": "http://keplai.io/graph/test"}
+    )
+    assert resp.status_code == 200
+    mock_graph.ontology.delete_ontology.assert_called_once_with("test-id", "http://keplai.io/graph/test")
+
+
+def test_get_ontology_schema(client, mock_graph):
+    mock_graph.ontology.get_schema.return_value = {
+        "classes": [{"uri": "http://example.org/Cat", "name": "Cat"}],
+        "properties": [],
+    }
+    resp = client.get(
+        "/api/ontology/ontologies/test-id/schema",
+        params={"graph_uri": "http://keplai.io/graph/test"}
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["classes"]) == 1
+    assert data["classes"][0]["name"] == "Cat"

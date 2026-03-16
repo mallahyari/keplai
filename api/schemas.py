@@ -125,10 +125,23 @@ class QueryResultWithExplanation(BaseModel):
 
 class ImportUrlRequest(BaseModel):
     url: str
+    name: str | None = None
 
 
 class ImportResponse(BaseModel):
+    ontology_id: str | None = None
+    graph_uri: str | None = None
     triples_loaded: int
     format: str
     classes: list[ClassOut]
     properties: list[PropertyOut]
+
+
+class OntologyMetadataOut(BaseModel):
+    id: str
+    name: str
+    source: str
+    graph_uri: str
+    import_date: str
+    classes_count: int
+    properties_count: int
