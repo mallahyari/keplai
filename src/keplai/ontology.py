@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+import tempfile
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
+from urllib.request import urlopen
 
-from rdflib import URIRef, Namespace, RDF, RDFS, OWL, XSD
+from rdflib import URIRef, Graph as RDFGraph, Namespace, RDF, RDFS, OWL, XSD
 
 if TYPE_CHECKING:
     from keplai.graph import KeplAI
@@ -138,6 +141,182 @@ class OntologyManager:
             "classes": self.get_classes(),
             "properties": self.get_properties(),
         }
+
+    # ------------------------------------------------------------------
+    # Import
+    # ------------------------------------------------------------------
+
+    _FORMAT_MAP: dict[str, str] = {
+        ".ttl": "turtle",
+        ".turtle": "turtle",
+        ".rdf": "xml",
+        ".xml": "xml",
+        ".owl": "xml",
+        ".nt": "nt",
+        ".ntriples": "nt",
+        ".jsonld": "json-ld",
+        ".json": "json-ld",
+    }
+
+    _SUPPORTED_FORMATS = {"turtle", "xml", "nt", "json-ld", "n3", "trig"}
+
+    def load_rdf(
+        self,
+        source: str | Path,
+        format: str = "auto",
+        batch_size: int = 1000,
+    ) -> dict:
+        """Parse an RDF file and load all triples into Fuseki.
+
+        Args:
+            source: Path to an RDF file (OWL/XML, Turtle, N-Triples, JSON-LD).
+            format: RDF serialization format. "auto" detects from file extension.
+            batch_size: Number of triples per SPARQL INSERT batch.
+
+        Returns:
+            Summary dict with triples_loaded, format, classes, properties.
+        """
+        from keplai.exceptions import OntologyImportError
+
+        path = Path(source)
+        if not path.exists():
+            raise OntologyImportError(f"File not found: {path}")
+
+        if format == "auto":
+            fmt = self._detect_format(path)
+        else:
+            if format not in self._SUPPORTED_FORMATS:
+                raise OntologyImportError(f"Unsupported format: {format!r}")
+            fmt = format
+
+        try:
+            rdf_graph = RDFGraph()
+            rdf_graph.parse(str(path), format=fmt)
+        except Exception as exc:
+            raise OntologyImportError(f"Failed to parse {path.name}: {exc}") from exc
+
+        total = self._batch_insert(rdf_graph, batch_size=batch_size)
+        detected = self._detect_schema_from_graph(rdf_graph)
+
+        logger.info(
+            "Imported %s: %d triples, %d classes, %d properties",
+            path.name, total, len(detected["classes"]), len(detected["properties"]),
+        )
+
+        return {
+            "triples_loaded": total,
+            "format": fmt,
+            **detected,
+        }
+
+    def load_url(
+        self,
+        url: str,
+        format: str = "auto",
+        batch_size: int = 1000,
+    ) -> dict:
+        """Fetch a remote ontology by URL and load it into Fuseki.
+
+        Args:
+            url: HTTP(S) URL pointing to an RDF file.
+            format: RDF format. "auto" detects from URL file extension.
+            batch_size: Number of triples per SPARQL INSERT batch.
+        """
+        from keplai.exceptions import OntologyImportError
+
+        if not url.startswith(("http://", "https://")):
+            raise OntologyImportError(f"URL must be http:// or https://, got: {url}")
+
+        # Determine suffix from URL for format detection
+        url_path = url.split("?")[0]
+        suffix = Path(url_path).suffix.lower() or ".rdf"
+
+        try:
+            with urlopen(url) as resp:
+                data = resp.read()
+        except Exception as exc:
+            raise OntologyImportError(f"Failed to fetch {url}: {exc}") from exc
+
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = Path(tmp.name)
+
+        try:
+            return self.load_rdf(tmp_path, format=format, batch_size=batch_size)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _detect_format(path: Path) -> str:
+        """Auto-detect RDF serialization format from file extension."""
+        suffix = path.suffix.lower()
+        fmt = OntologyManager._FORMAT_MAP.get(suffix)
+        if fmt is None:
+            from keplai.exceptions import OntologyImportError
+            raise OntologyImportError(
+                f"Unsupported file extension: {suffix}. "
+                f"Supported: {', '.join(sorted(OntologyManager._FORMAT_MAP.keys()))}"
+            )
+        return fmt
+
+    def _batch_insert(self, rdf_graph: RDFGraph, batch_size: int = 1000) -> int:
+        """Bulk-insert triples from an rdflib Graph into Fuseki in batches."""
+        triples = list(rdf_graph)
+        total = len(triples)
+        for i in range(0, total, batch_size):
+            batch = triples[i : i + batch_size]
+            parts = []
+            for s, p, o in batch:
+                parts.append(f"{s.n3()} {p.n3()} {o.n3()} .")
+            sparql = "INSERT DATA {\n" + "\n".join(parts) + "\n}"
+            self._graph._execute_update(sparql)
+        logger.info("Batch-inserted %d triples in %d batches", total, (total + batch_size - 1) // batch_size)
+        return total
+
+    @staticmethod
+    def _detect_schema_from_graph(rdf_graph: RDFGraph) -> dict:
+        """Detect classes and properties from a parsed rdflib Graph."""
+        classes = []
+        for cls_uri in rdf_graph.subjects(RDF.type, OWL.Class):
+            label = str(cls_uri).split("/")[-1].split("#")[-1]
+            for lbl in rdf_graph.objects(cls_uri, RDFS.label):
+                label = str(lbl)
+                break
+            classes.append({"uri": str(cls_uri), "name": label})
+
+        # Also check rdfs:Class
+        for cls_uri in rdf_graph.subjects(RDF.type, RDFS.Class):
+            uri_str = str(cls_uri)
+            if not any(c["uri"] == uri_str for c in classes):
+                label = uri_str.split("/")[-1].split("#")[-1]
+                for lbl in rdf_graph.objects(cls_uri, RDFS.label):
+                    label = str(lbl)
+                    break
+                classes.append({"uri": uri_str, "name": label})
+
+        properties = []
+        for prop_type in (OWL.ObjectProperty, OWL.DatatypeProperty):
+            for prop_uri in rdf_graph.subjects(RDF.type, prop_type):
+                label = str(prop_uri).split("/")[-1].split("#")[-1]
+                domain = ""
+                range_ = ""
+                for lbl in rdf_graph.objects(prop_uri, RDFS.label):
+                    label = str(lbl)
+                    break
+                for d in rdf_graph.objects(prop_uri, RDFS.domain):
+                    domain = str(d).split("/")[-1].split("#")[-1]
+                    break
+                for r in rdf_graph.objects(prop_uri, RDFS.range):
+                    range_ = str(r).split("/")[-1].split("#")[-1]
+                    break
+                properties.append({
+                    "uri": str(prop_uri),
+                    "name": label,
+                    "domain": domain,
+                    "range": range_,
+                })
+
+        return {"classes": classes, "properties": properties}
 
     # ------------------------------------------------------------------
     # Helpers
