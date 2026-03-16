@@ -22,6 +22,12 @@ def main():
         except ImportError:
             print("uvicorn is required. Install with: pip install keplai[api]", file=sys.stderr)
             sys.exit(1)
+        # Load .env file before starting the server
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
         uvicorn.run("api.main:app", host=args.host, port=args.port, reload=args.reload)
     else:
         parser.print_help()
