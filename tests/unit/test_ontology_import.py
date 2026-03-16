@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
 from keplai.config import KeplAISettings
 from keplai.exceptions import OntologyImportError
@@ -86,3 +86,36 @@ def test_load_rdf_batches_large_triple_sets(mock_wrapper_cls):
     # With ~10 triples and batch_size=3, should have multiple batch inserts
     assert mock_instance.query.call_count >= 2
     assert result["triples_loaded"] > 0
+
+
+@patch("keplai.ontology.urlopen")
+@patch("keplai.graph.SPARQLWrapper")
+def test_load_url_fetches_and_imports(mock_wrapper_cls, mock_urlopen):
+    mock_instance = MagicMock()
+    mock_wrapper_cls.return_value = mock_instance
+
+    # Simulate a Turtle response
+    ttl_content = b"""
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+    @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+    @prefix ex: <http://example.org/> .
+    ex:Dog rdf:type owl:Class ; rdfs:label "Dog" .
+    """
+    mock_response = MagicMock()
+    mock_response.read.return_value = ttl_content
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=False)
+    mock_urlopen.return_value = mock_response
+
+    g = _make_graph()
+    result = g.ontology.load_url("http://example.org/ontology.ttl")
+
+    assert result["triples_loaded"] > 0
+    assert any(c["name"] == "Dog" for c in result["classes"])
+
+
+def test_load_url_rejects_non_http():
+    g = _make_graph()
+    with pytest.raises(OntologyImportError, match="must be http"):
+        g.ontology.load_url("ftp://example.org/ontology.ttl")
