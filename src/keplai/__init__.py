@@ -6,6 +6,8 @@ from keplai.exceptions import (
     QueryError,
     DisambiguationError,
     OntologyImportError,
+    OntologyConflictError,
+    OntologyNotFoundError,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "QueryError",
     "DisambiguationError",
     "OntologyImportError",
+    "OntologyConflictError",
+    "OntologyNotFoundError",
 ]

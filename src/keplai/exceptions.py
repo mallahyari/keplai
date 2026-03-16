@@ -23,3 +23,11 @@ class DisambiguationError(KeplAIError):
 
 class OntologyImportError(KeplAIError):
     """Raised when ontology file/URL import fails."""
+
+
+class OntologyConflictError(KeplAIError):
+    """Raised when a label matches properties/classes in multiple ontologies."""
+
+
+class OntologyNotFoundError(KeplAIError):
+    """Raised when a referenced ontology does not exist."""
