@@ -92,6 +92,15 @@ export interface QueryResultWithExplanation extends QueryResult {
   explanation: string;
 }
 
+// Import types
+
+export interface OntologyImportResponse {
+  triples_loaded: number;
+  format: string;
+  classes: OntologyClass[];
+  properties: OntologyProperty[];
+}
+
 // Graph explorer types
 
 export interface GraphNode {

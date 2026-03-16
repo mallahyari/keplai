@@ -5,6 +5,7 @@ import type {
   OntologyClass,
   OntologyProperty,
   OntologySchema,
+  OntologyImportResponse,
   ExtractionRequest,
   ExtractedTriple,
   PreviewTriple,
@@ -85,6 +86,23 @@ export const api = {
     }),
 
   getSchema: () => request<OntologySchema>(`${ONT_BASE}/schema`),
+
+  uploadOntologyFile: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return fetch(`${ONT_BASE}/upload`, { method: "POST", body: form }).then(
+      async (res) => {
+        if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+        return res.json() as Promise<OntologyImportResponse>;
+      },
+    );
+  },
+
+  importOntologyUrl: (url: string) =>
+    request<OntologyImportResponse>(`${ONT_BASE}/import-url`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
 
   // Extraction
   extractAndStore: (req: ExtractionRequest) =>
