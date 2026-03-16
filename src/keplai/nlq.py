@@ -73,11 +73,20 @@ class NLQueryEngine:
         classes = schema.get("classes", [])
         properties = schema.get("properties", [])
 
-        class_lines = []
+        # Group classes by namespace for clarity
+        namespaces: dict[str, list[str]] = {}
         for c in classes:
             uri = c.get("uri", "")
             name = c.get("name", "")
-            class_lines.append(f"  - {name} <{uri}>")
+            ns = uri.rsplit("#", 1)[0] + "#" if "#" in uri else uri.rsplit("/", 1)[0] + "/"
+            namespaces.setdefault(ns, [])
+            namespaces[ns].append(f"{name} <{uri}>")
+
+        class_lines = []
+        for ns, items in namespaces.items():
+            class_lines.append(f"  Namespace {ns}:")
+            for item in items:
+                class_lines.append(f"    - {item}")
 
         prop_lines = []
         for p in properties:
@@ -88,14 +97,20 @@ class NLQueryEngine:
                 f"domain={p.get('domain', '?')}, range={p.get('range', '?')}"
             )
 
+        has_multiple_namespaces = len(namespaces) > 1
+        graph_instruction = (
+            "- The graph contains multiple ontologies from different namespaces.\n"
+            "  Use GRAPH clauses if needed to query within specific named graphs.\n"
+        ) if has_multiple_namespaces else ""
+
         system_prompt = (
             "You are a SPARQL query generator for a knowledge graph.\n\n"
             "GRAPH SCHEMA:\n"
             f"Default entity namespace: {self._graph._settings.entity_namespace}\n"
             f"Default ontology namespace: {self._graph._settings.ontology_namespace}\n\n"
-            f"Classes (name <full-URI>):\n"
+            f"Classes:\n"
             f"{''.join(class_lines) if class_lines else '  (none)'}\n"
-            f"Properties (name <full-URI>):\n"
+            f"Properties:\n"
             f"{''.join(prop_lines) if prop_lines else '  (none)'}\n"
             f"Sample entities: {', '.join(sample_entities[:20]) if sample_entities else '(none)'}\n\n"
             "RULES:\n"
@@ -103,6 +118,7 @@ class NLQueryEngine:
             "- IMPORTANT: Use the exact full URIs shown above for classes and properties.\n"
             "  Do NOT assume all URIs use the default namespace — use the URIs from the schema.\n"
             "- For entity instances, use the default entity namespace unless you see otherwise.\n"
+            f"{graph_instruction}"
             "- Return ONLY the SPARQL query, no explanation or markdown.\n"
             "- Use PREFIX declarations for cleaner queries.\n"
         )
@@ -161,17 +177,20 @@ class NLQueryEngine:
         return response.choices[0].message.content or ""
 
     def _get_sample_entities(self, limit: int = 20) -> list[str]:
-        """Fetch a sample of entity names from the graph."""
+        """Fetch a sample of entity names from across all data graphs."""
+        ent_ns = self._graph._settings.entity_namespace
+        meta_graph = self._graph._settings.metadata_graph
         sparql = (
             f"SELECT DISTINCT ?s WHERE {{ "
-            f"?s ?p ?o . "
-            f"FILTER(STRSTARTS(STR(?s), \"{self._graph._settings.entity_namespace}\")) "
+            f"{{ ?s ?p ?o . FILTER(STRSTARTS(STR(?s), \"{ent_ns}\")) }} "
+            f"UNION "
+            f"{{ GRAPH ?g {{ ?s ?p ?o . FILTER(STRSTARTS(STR(?s), \"{ent_ns}\")) }} "
+            f"   FILTER(?g != <{meta_graph}>) }} "
             f"}} LIMIT {limit}"
         )
         try:
             rows = self._graph._execute_query(sparql)
-            ns = self._graph._settings.entity_namespace
-            return [r["s"].replace(ns, "") for r in rows if "s" in r]
+            return [r["s"].replace(ent_ns, "") for r in rows if "s" in r]
         except Exception:
             return []
 

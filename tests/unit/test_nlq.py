@@ -97,6 +97,32 @@ def test_execute_sparql_enforces_read_only():
 
 
 @pytest.mark.asyncio
+async def test_generate_sparql_includes_graph_context_for_multi_namespace():
+    """System prompt should mention GRAPH clauses when multiple namespaces exist."""
+    engine = _make_engine()
+    engine._graph.ontology.get_schema.return_value = {
+        "classes": [
+            {"uri": "http://ontology.example.org/cat#Person", "name": "Person"},
+            {"uri": "http://xmlns.com/foaf/0.1/Person", "name": "Person"},
+        ],
+        "properties": [
+            {"uri": "http://ontology.example.org/cat#owns", "name": "owns", "domain": "Person", "range": "Cat"},
+        ],
+    }
+    engine._client.chat.completions.create = AsyncMock(
+        return_value=_mock_completion("SELECT ?s WHERE { ?s ?p ?o }")
+    )
+    engine._get_sample_entities = MagicMock(return_value=[])
+
+    await engine.ask("test question")
+
+    call_args = engine._client.chat.completions.create.call_args
+    system_msg = call_args.kwargs["messages"][0]["content"]
+    assert "GRAPH" in system_msg
+    assert "multiple ontologies" in system_msg
+
+
+@pytest.mark.asyncio
 async def test_strips_markdown_code_fences():
     engine = _make_engine()
     engine._client.chat.completions.create = AsyncMock(
