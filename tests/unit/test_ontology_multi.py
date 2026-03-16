@@ -3,7 +3,10 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from rdflib import URIRef
+
 from keplai.config import KeplAISettings
+from keplai.exceptions import OntologyConflictError
 from keplai.graph import KeplAI
 from keplai.ontology import OntologyManager
 
@@ -116,6 +119,71 @@ def test_delete_ontology_removes_graph_and_metadata():
     # Should DELETE metadata
     meta_graph = graph._settings.metadata_graph
     assert any(meta_graph in u and "DELETE" in u for u in updates)
+
+
+def _make_keplai():
+    """Create a mocked KeplAI instance for resolution tests."""
+    settings = KeplAISettings(openai_api_key="test-key")
+    mock_engine = MagicMock()
+    mock_engine.update_url = "http://localhost:3030/keplai/update"
+    mock_engine.sparql_url = "http://localhost:3030/keplai/sparql"
+    return KeplAI(engine=mock_engine, settings=settings)
+
+
+def test_resolve_property_uri_raises_on_conflict():
+    """When two ontologies define a property with the same label, raise OntologyConflictError."""
+    kg = _make_keplai()
+
+    # Simulate two properties with same label from different ontologies
+    kg._execute_query = MagicMock(return_value=[
+        {"prop": "http://ontology.example.org/cat#name"},
+        {"prop": "http://xmlns.com/foaf/0.1/name"},
+    ])
+
+    with pytest.raises(OntologyConflictError, match="name"):
+        kg._resolve_property_uri("name")
+
+
+def test_resolve_property_uri_returns_uri_when_single_match():
+    kg = _make_keplai()
+
+    kg._execute_query = MagicMock(return_value=[
+        {"prop": "http://ontology.example.org/cat#owns"},
+    ])
+
+    result = kg._resolve_property_uri("owns")
+    assert result == URIRef("http://ontology.example.org/cat#owns")
+
+
+def test_resolve_property_uri_returns_none_when_no_match():
+    kg = _make_keplai()
+    kg._execute_query = MagicMock(return_value=[])
+
+    result = kg._resolve_property_uri("nonexistent")
+    assert result is None
+
+
+def test_resolve_class_uri_raises_on_conflict():
+    kg = _make_keplai()
+
+    kg._execute_query = MagicMock(return_value=[
+        {"cls": "http://ontology.example.org/cat#Person"},
+        {"cls": "http://xmlns.com/foaf/0.1/Person"},
+    ])
+
+    with pytest.raises(OntologyConflictError, match="Person"):
+        kg._resolve_class_uri("Person")
+
+
+def test_resolve_class_uri_returns_uri_when_single_match():
+    kg = _make_keplai()
+
+    kg._execute_query = MagicMock(return_value=[
+        {"cls": "http://ontology.example.org/cat#Cat"},
+    ])
+
+    result = kg._resolve_class_uri("Cat")
+    assert result == URIRef("http://ontology.example.org/cat#Cat")
 
 
 def test_get_schema_with_graph_uri_filters_by_graph():

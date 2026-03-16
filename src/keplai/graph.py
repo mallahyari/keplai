@@ -331,33 +331,60 @@ class KeplAI:
         return self._ontology_ns[value]
 
     def _resolve_property_uri(self, name: str) -> URIRef | None:
-        """Find an existing property URI by label from any namespace."""
+        """Find an existing property URI by label from any namespace.
+
+        Queries both default graph and named graphs. Raises OntologyConflictError
+        if the same label matches properties in multiple namespaces.
+        """
+        from keplai.exceptions import OntologyConflictError
         sparql = (
-            f"SELECT ?prop WHERE {{ "
-            f"{{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
-            f"UNION "
-            f"{{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
-            f"?prop {RDFS.label.n3()} ?label . "
-            f"FILTER(STR(?label) = \"{name}\") "
-            f"}} LIMIT 1"
+            f"SELECT DISTINCT ?prop WHERE {{ "
+            f"{{ "
+            f"  {{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
+            f"  UNION "
+            f"  {{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
+            f"  ?prop {RDFS.label.n3()} ?label . "
+            f"  FILTER(STR(?label) = \"{name}\") "
+            f"}} UNION {{ "
+            f"  GRAPH ?g {{ "
+            f"    {{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
+            f"    UNION "
+            f"    {{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
+            f"    ?prop {RDFS.label.n3()} ?label . "
+            f"    FILTER(STR(?label) = \"{name}\") "
+            f"  }} "
+            f"}} }}"
         )
         try:
             rows = self._execute_query(sparql)
-            if rows:
-                return URIRef(rows[0]["prop"])
+            if not rows:
+                return None
+            uris = list({r["prop"] for r in rows})
+            if len(uris) == 1:
+                return URIRef(uris[0])
+            raise OntologyConflictError(
+                f"Ambiguous property '{name}': found in multiple ontologies: "
+                + ", ".join(uris)
+                + ". Use the full URI instead."
+            )
+        except OntologyConflictError:
+            raise
         except Exception:
-            pass
-        return None
+            return None
 
     def _get_property_domain_range(self, prop_uri: URIRef) -> tuple[URIRef | None, URIRef | None]:
-        """Look up rdfs:domain and rdfs:range for a property URI."""
+        """Look up rdfs:domain and rdfs:range for a property URI across all graphs."""
         sparql = (
             f"SELECT ?domain ?range WHERE {{ "
-            f"OPTIONAL {{ {prop_uri.n3()} {RDFS.domain.n3()} ?domain . "
-            f"  FILTER(isURI(?domain)) }} "
-            f"OPTIONAL {{ {prop_uri.n3()} {RDFS.range.n3()} ?range . "
-            f"  FILTER(isURI(?range)) }} "
-            f"}} LIMIT 1"
+            f"{{ "
+            f"  OPTIONAL {{ {prop_uri.n3()} {RDFS.domain.n3()} ?domain . FILTER(isURI(?domain)) }} "
+            f"  OPTIONAL {{ {prop_uri.n3()} {RDFS.range.n3()} ?range . FILTER(isURI(?range)) }} "
+            f"}} UNION {{ "
+            f"  GRAPH ?g {{ "
+            f"    OPTIONAL {{ {prop_uri.n3()} {RDFS.domain.n3()} ?domain . FILTER(isURI(?domain)) }} "
+            f"    OPTIONAL {{ {prop_uri.n3()} {RDFS.range.n3()} ?range . FILTER(isURI(?range)) }} "
+            f"  }} "
+            f"}} }} LIMIT 1"
         )
         try:
             rows = self._execute_query(sparql)
@@ -391,23 +418,46 @@ class KeplAI:
         return Literal(str(value))
 
     def _resolve_class_uri(self, name: str) -> URIRef | None:
-        """Find an existing class URI by label from any namespace."""
+        """Find an existing class URI by label from any namespace.
+
+        Queries both default graph and named graphs. Raises OntologyConflictError
+        if the same label matches classes in multiple namespaces.
+        """
+        from keplai.exceptions import OntologyConflictError
         sparql = (
-            f"SELECT ?cls WHERE {{ "
-            f"{{ ?cls {RDF.type.n3()} {OWL.Class.n3()} }} "
-            f"UNION "
-            f"{{ ?cls {RDF.type.n3()} {RDFS.Class.n3()} }} "
-            f"?cls {RDFS.label.n3()} ?label . "
-            f"FILTER(STR(?label) = \"{name}\") "
-            f"}} LIMIT 1"
+            f"SELECT DISTINCT ?cls WHERE {{ "
+            f"{{ "
+            f"  {{ ?cls {RDF.type.n3()} {OWL.Class.n3()} }} "
+            f"  UNION "
+            f"  {{ ?cls {RDF.type.n3()} {RDFS.Class.n3()} }} "
+            f"  ?cls {RDFS.label.n3()} ?label . "
+            f"  FILTER(STR(?label) = \"{name}\") "
+            f"}} UNION {{ "
+            f"  GRAPH ?g {{ "
+            f"    {{ ?cls {RDF.type.n3()} {OWL.Class.n3()} }} "
+            f"    UNION "
+            f"    {{ ?cls {RDF.type.n3()} {RDFS.Class.n3()} }} "
+            f"    ?cls {RDFS.label.n3()} ?label . "
+            f"    FILTER(STR(?label) = \"{name}\") "
+            f"  }} "
+            f"}} }}"
         )
         try:
             rows = self._execute_query(sparql)
-            if rows:
-                return URIRef(rows[0]["cls"])
+            if not rows:
+                return None
+            uris = list({r["cls"] for r in rows})
+            if len(uris) == 1:
+                return URIRef(uris[0])
+            raise OntologyConflictError(
+                f"Ambiguous class '{name}': found in multiple ontologies: "
+                + ", ".join(uris)
+                + ". Use the full URI instead."
+            )
+        except OntologyConflictError:
+            raise
         except Exception:
-            pass
-        return None
+            return None
 
     # ------------------------------------------------------------------
     # SPARQL execution
