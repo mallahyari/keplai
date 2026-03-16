@@ -92,6 +92,22 @@ async def test_extract_handles_empty_response():
     assert results == []
 
 
+@pytest.mark.asyncio
+async def test_extract_handles_flat_single_triple():
+    """LLM sometimes returns a single triple as a flat object instead of wrapped in 'triples' key."""
+    extractor = _make_extractor()
+    flat_json = json.dumps({"subject": "Alice", "predicate": "knows", "object": "Bob"})
+    extractor._client.chat.completions.create = AsyncMock(
+        return_value=_mock_completion(flat_json)
+    )
+
+    results = await extractor.extract("Alice knows Bob", mode="open")
+    assert len(results) == 1
+    assert results[0].subject == "Alice"
+    assert results[0].predicate == "knows"
+    assert results[0].object == "Bob"
+
+
 def test_extracted_triple_to_dict():
     t = ExtractedTriple("Alice", "knows", "Bob")
     d = t.to_dict()

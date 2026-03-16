@@ -72,8 +72,8 @@ class AIExtractor:
             "RULES:\n"
             "- Only use classes and properties defined in the schema above.\n"
             "- Each triple must have: subject (an entity name), predicate (a property name), object (entity name or literal value).\n"
-            "- Return a JSON array of objects with keys: subject, predicate, object.\n"
-            "- If no valid triples can be extracted, return an empty array [].\n"
+            '- Return a JSON object with a "triples" key containing an array of objects with keys: subject, predicate, object.\n'
+            '- If no valid triples can be extracted, return {"triples": []}.\n'
             "- Do NOT invent classes or properties not in the schema.\n"
         )
 
@@ -88,8 +88,8 @@ class AIExtractor:
             "- Each triple must have: subject (an entity name), predicate (a relationship), object (entity name or literal value).\n"
             "- Use PascalCase for entity names (e.g., 'MehdiAllahyari', 'BrandPulse').\n"
             "- Use camelCase for predicates (e.g., 'foundedBy', 'worksAt', 'hasAge').\n"
-            "- Return a JSON array of objects with keys: subject, predicate, object.\n"
-            "- If no triples can be extracted, return an empty array [].\n"
+            '- Return a JSON object with a "triples" key containing an array of objects with keys: subject, predicate, object.\n'
+            '- If no triples can be extracted, return {"triples": []}.\n'
         )
 
         return await self._call_llm(system_prompt, text)
@@ -115,8 +115,18 @@ class AIExtractor:
             logger.warning("LLM returned invalid JSON: %s", content[:200])
             return []
 
-        # Handle both {"triples": [...]} and [...] formats
-        triples_raw = data if isinstance(data, list) else data.get("triples", [])
+        # Handle multiple LLM response formats:
+        # - {"triples": [...]}  (expected)
+        # - [...]               (raw array)
+        # - {"subject": ..., "predicate": ..., "object": ...}  (single flat triple)
+        if isinstance(data, list):
+            triples_raw = data
+        elif "triples" in data:
+            triples_raw = data["triples"]
+        elif "subject" in data and "predicate" in data and "object" in data:
+            triples_raw = [data]
+        else:
+            triples_raw = []
 
         triples = []
         for t in triples_raw:
