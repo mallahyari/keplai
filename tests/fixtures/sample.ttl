@@ -1,0 +1,27 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ex: <http://example.org/ontology/> .
+
+ex:Person rdf:type owl:Class ;
+    rdfs:label "Person" .
+
+ex:Organization rdf:type owl:Class ;
+    rdfs:label "Organization" .
+
+ex:worksFor rdf:type owl:ObjectProperty ;
+    rdfs:label "worksFor" ;
+    rdfs:domain ex:Person ;
+    rdfs:range ex:Organization .
+
+ex:name rdf:type owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain ex:Person ;
+    rdfs:range <http://www.w3.org/2001/XMLSchema#string> .
+
+ex:Alice rdf:type ex:Person ;
+    ex:name "Alice" ;
+    ex:worksFor ex:Acme .
+
+ex:Acme rdf:type ex:Organization ;
+    ex:name "Acme Corp" .
