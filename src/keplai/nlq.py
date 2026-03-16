@@ -70,24 +70,39 @@ class NLQueryEngine:
         schema: dict[str, Any],
         sample_entities: list[str],
     ) -> str:
-        classes = [c["name"] for c in schema.get("classes", [])]
+        classes = schema.get("classes", [])
         properties = schema.get("properties", [])
+
+        class_lines = []
+        for c in classes:
+            uri = c.get("uri", "")
+            name = c.get("name", "")
+            class_lines.append(f"  - {name} <{uri}>")
 
         prop_lines = []
         for p in properties:
-            prop_lines.append(f"  - {p['name']}: domain={p.get('domain', '?')}, range={p.get('range', '?')}")
+            uri = p.get("uri", "")
+            name = p.get("name", "")
+            prop_lines.append(
+                f"  - {name} <{uri}>: "
+                f"domain={p.get('domain', '?')}, range={p.get('range', '?')}"
+            )
 
         system_prompt = (
             "You are a SPARQL query generator for a knowledge graph.\n\n"
             "GRAPH SCHEMA:\n"
-            f"Entity namespace: {self._graph._settings.entity_namespace}\n"
-            f"Ontology namespace: {self._graph._settings.ontology_namespace}\n"
-            f"Classes: {', '.join(classes) if classes else '(none)'}\n"
-            f"Properties:\n{''.join(prop_lines) if prop_lines else '  (none)'}\n"
+            f"Default entity namespace: {self._graph._settings.entity_namespace}\n"
+            f"Default ontology namespace: {self._graph._settings.ontology_namespace}\n\n"
+            f"Classes (name <full-URI>):\n"
+            f"{''.join(class_lines) if class_lines else '  (none)'}\n"
+            f"Properties (name <full-URI>):\n"
+            f"{''.join(prop_lines) if prop_lines else '  (none)'}\n"
             f"Sample entities: {', '.join(sample_entities[:20]) if sample_entities else '(none)'}\n\n"
             "RULES:\n"
             "- Generate ONLY a SELECT query. Never INSERT, DELETE, DROP, or modify data.\n"
-            "- Use the entity namespace for entity URIs and ontology namespace for predicates.\n"
+            "- IMPORTANT: Use the exact full URIs shown above for classes and properties.\n"
+            "  Do NOT assume all URIs use the default namespace — use the URIs from the schema.\n"
+            "- For entity instances, use the default entity namespace unless you see otherwise.\n"
             "- Return ONLY the SPARQL query, no explanation or markdown.\n"
             "- Use PREFIX declarations for cleaner queries.\n"
         )

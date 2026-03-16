@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, TYPE_CHECKING
 
-from rdflib import URIRef, Literal, Namespace, XSD
+from rdflib import URIRef, Literal, Namespace, XSD, RDF, RDFS, OWL
 from SPARQLWrapper import SPARQLWrapper, JSON, POST, POSTDIRECTLY
 
 from keplai.config import KeplAISettings
@@ -273,11 +273,40 @@ class KeplAI:
         return self._entity_ns[value]
 
     def _to_predicate_uri(self, value: str) -> URIRef:
-        """Map a plain string to an ontology predicate URI."""
+        """Map a plain string to an ontology predicate URI.
+
+        Looks up existing properties in the graph first. If a property
+        with a matching rdfs:label is found (e.g. from an imported ontology),
+        its actual URI is used. Otherwise falls back to the KeplAI namespace.
+        """
         value = value.strip()
         if value.startswith("http://") or value.startswith("https://"):
             return URIRef(value)
+
+        # Check if a property with this label exists in the graph
+        resolved = self._resolve_property_uri(value)
+        if resolved is not None:
+            return resolved
         return self._ontology_ns[value]
+
+    def _resolve_property_uri(self, name: str) -> URIRef | None:
+        """Find an existing property URI by label from any namespace."""
+        sparql = (
+            f"SELECT ?prop WHERE {{ "
+            f"{{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
+            f"UNION "
+            f"{{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
+            f"?prop {RDFS.label.n3()} ?label . "
+            f"FILTER(STR(?label) = \"{name}\") "
+            f"}} LIMIT 1"
+        )
+        try:
+            rows = self._execute_query(sparql)
+            if rows:
+                return URIRef(rows[0]["prop"])
+        except Exception:
+            pass
+        return None
 
     def _to_object(self, value: str | int | float) -> URIRef | Literal:
         """Auto-detect whether an object is a literal or an entity URI."""
@@ -292,9 +321,32 @@ class KeplAI:
             # Heuristic: if it looks like a name/entity (capitalized, no spaces with special chars)
             # treat as entity URI; otherwise treat as literal
             if value and value[0].isupper() and " " not in value:
+                # Check if this matches a known class from an imported ontology
+                resolved = self._resolve_class_uri(value)
+                if resolved is not None:
+                    return resolved
                 return self._entity_ns[value]
             return Literal(value)
         return Literal(str(value))
+
+    def _resolve_class_uri(self, name: str) -> URIRef | None:
+        """Find an existing class URI by label from any namespace."""
+        sparql = (
+            f"SELECT ?cls WHERE {{ "
+            f"{{ ?cls {RDF.type.n3()} {OWL.Class.n3()} }} "
+            f"UNION "
+            f"{{ ?cls {RDF.type.n3()} {RDFS.Class.n3()} }} "
+            f"?cls {RDFS.label.n3()} ?label . "
+            f"FILTER(STR(?label) = \"{name}\") "
+            f"}} LIMIT 1"
+        )
+        try:
+            rows = self._execute_query(sparql)
+            if rows:
+                return URIRef(rows[0]["cls"])
+        except Exception:
+            pass
+        return None
 
     # ------------------------------------------------------------------
     # SPARQL execution
