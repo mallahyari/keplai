@@ -118,3 +118,41 @@ def test_get_schema(client):
     schema = resp.json()
     assert "classes" in schema
     assert "properties" in schema
+
+
+# -- Import endpoints --
+
+def test_upload_ontology_file(client, mock_graph):
+    mock_graph.ontology.load_rdf.return_value = {
+        "triples_loaded": 10,
+        "format": "turtle",
+        "classes": [{"uri": "http://example.org/Person", "name": "Person"}],
+        "properties": [{"uri": "http://example.org/knows", "name": "knows", "domain": "Person", "range": "Person"}],
+    }
+    resp = client.post(
+        "/api/ontology/upload",
+        files={"file": ("test.ttl", b"@prefix ex: <http://example.org/> .", "text/turtle")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["triples_loaded"] == 10
+    assert len(data["classes"]) == 1
+
+
+def test_import_ontology_from_url(client, mock_graph):
+    mock_graph.ontology.load_url.return_value = {
+        "triples_loaded": 5,
+        "format": "xml",
+        "classes": [],
+        "properties": [],
+    }
+    resp = client.post("/api/ontology/import-url", json={"url": "http://example.org/onto.owl"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["triples_loaded"] == 5
+    mock_graph.ontology.load_url.assert_called_once_with("http://example.org/onto.owl")
+
+
+def test_upload_rejects_no_file(client):
+    resp = client.post("/api/ontology/upload")
+    assert resp.status_code == 422
