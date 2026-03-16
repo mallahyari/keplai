@@ -95,10 +95,22 @@ export interface QueryResultWithExplanation extends QueryResult {
 // Import types
 
 export interface OntologyImportResponse {
+  ontology_id: string | null;
+  graph_uri: string | null;
   triples_loaded: number;
   format: string;
   classes: OntologyClass[];
   properties: OntologyProperty[];
+}
+
+export interface OntologyMetadata {
+  id: string;
+  name: string;
+  source: string;
+  graph_uri: string;
+  import_date: string;
+  classes_count: number;
+  properties_count: number;
 }
 
 // Graph explorer types

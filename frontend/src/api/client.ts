@@ -6,6 +6,7 @@ import type {
   OntologyProperty,
   OntologySchema,
   OntologyImportResponse,
+  OntologyMetadata,
   ExtractionRequest,
   ExtractedTriple,
   PreviewTriple,
@@ -98,11 +99,25 @@ export const api = {
     );
   },
 
-  importOntologyUrl: (url: string) =>
+  importOntologyUrl: (url: string, name?: string) =>
     request<OntologyImportResponse>(`${ONT_BASE}/import-url`, {
       method: "POST",
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, name }),
     }),
+
+  // Multi-ontology management
+  getOntologies: () => request<OntologyMetadata[]>(`${ONT_BASE}/ontologies`),
+
+  deleteOntology: (ontologyId: string, graphUri: string) =>
+    request<{ status: string }>(
+      `${ONT_BASE}/ontologies/${ontologyId}?graph_uri=${encodeURIComponent(graphUri)}`,
+      { method: "DELETE" },
+    ),
+
+  getOntologySchema: (ontologyId: string, graphUri: string) =>
+    request<OntologySchema>(
+      `${ONT_BASE}/ontologies/${ontologyId}/schema?graph_uri=${encodeURIComponent(graphUri)}`,
+    ),
 
   // Extraction
   extractAndStore: (req: ExtractionRequest) =>

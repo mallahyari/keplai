@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { OntologyClass, OntologyProperty, OntologyImportResponse } from "@/types/graph";
+import type { OntologyClass, OntologyProperty, OntologyImportResponse, OntologyMetadata, OntologySchema } from "@/types/graph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2 } from "lucide-react";
+import { Trash2, Eye } from "lucide-react";
 
 export function OntologyPage() {
   const [classes, setClasses] = useState<OntologyClass[]>([]);
@@ -35,15 +35,21 @@ export function OntologyPage() {
   const [importResult, setImportResult] = useState<OntologyImportResponse | null>(null);
   const [importError, setImportError] = useState("");
 
+  // Multi-ontology management
+  const [ontologies, setOntologies] = useState<OntologyMetadata[]>([]);
+  const [selectedSchema, setSelectedSchema] = useState<{ id: string; schema: OntologySchema } | null>(null);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [cls, props] = await Promise.all([
+      const [cls, props, onts] = await Promise.all([
         api.getClasses(),
         api.getProperties(),
+        api.getOntologies(),
       ]);
       setClasses(cls);
       setProperties(props);
+      setOntologies(onts);
     } catch (err) {
       console.error("Failed to load ontology", err);
     } finally {
@@ -121,6 +127,29 @@ export function OntologyPage() {
     }
   };
 
+  const handleDeleteOntology = async (id: string, graphUri: string) => {
+    try {
+      await api.deleteOntology(id, graphUri);
+      setSelectedSchema(null);
+      refresh();
+    } catch (err) {
+      console.error("Failed to delete ontology", err);
+    }
+  };
+
+  const handleViewSchema = async (id: string, graphUri: string) => {
+    if (selectedSchema?.id === id) {
+      setSelectedSchema(null);
+      return;
+    }
+    try {
+      const schema = await api.getOntologySchema(id, graphUri);
+      setSelectedSchema({ id, schema });
+    } catch (err) {
+      console.error("Failed to load schema", err);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <h2 className="text-2xl font-semibold tracking-tight">Ontology</h2>
@@ -178,6 +207,105 @@ export function OntologyPage() {
             <p className="text-xs text-green-700">
               Detected {importResult.classes.length} classes and {importResult.properties.length} properties
             </p>
+          </div>
+        )}
+      </section>
+
+      <Separator />
+
+      {/* Imported Ontologies section */}
+      <section className="space-y-4">
+        <h3 className="text-lg font-medium">Imported Ontologies</h3>
+
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Classes</TableHead>
+                <TableHead>Properties</TableHead>
+                <TableHead>Imported</TableHead>
+                <TableHead className="w-[100px]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    Loading...
+                  </TableCell>
+                </TableRow>
+              ) : ontologies.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    No ontologies imported
+                  </TableCell>
+                </TableRow>
+              ) : (
+                ontologies.map((ont) => (
+                  <TableRow key={ont.id}>
+                    <TableCell className="font-medium">{ont.name}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground truncate max-w-[200px]">
+                      {ont.source}
+                    </TableCell>
+                    <TableCell>{ont.classes_count}</TableCell>
+                    <TableCell>{ont.properties_count}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(ont.import_date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleViewSchema(ont.id, ont.graph_uri)}
+                        title="View schema"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteOntology(ont.id, ont.graph_uri)}
+                        title="Delete ontology"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {selectedSchema && (
+          <div className="rounded-md border p-4 space-y-3">
+            <p className="text-sm font-medium">Schema Details</p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Classes ({selectedSchema.schema.classes.length})</p>
+                <ul className="text-sm space-y-0.5">
+                  {selectedSchema.schema.classes.map((c) => (
+                    <li key={c.uri} className="font-mono text-xs">{c.name} &mdash; <span className="text-muted-foreground">{c.uri}</span></li>
+                  ))}
+                  {selectedSchema.schema.classes.length === 0 && (
+                    <li className="text-muted-foreground text-xs">None</li>
+                  )}
+                </ul>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Properties ({selectedSchema.schema.properties.length})</p>
+                <ul className="text-sm space-y-0.5">
+                  {selectedSchema.schema.properties.map((p) => (
+                    <li key={p.uri} className="font-mono text-xs">{p.name} ({p.domain} &rarr; {p.range})</li>
+                  ))}
+                  {selectedSchema.schema.properties.length === 0 && (
+                    <li className="text-muted-foreground text-xs">None</li>
+                  )}
+                </ul>
+              </div>
+            </div>
           </div>
         )}
       </section>
