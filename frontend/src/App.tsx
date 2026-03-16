@@ -1,16 +1,23 @@
-import { Layout } from "@/components/layout";
+import { useHashRoute } from "@/hooks/use-hash-route";
+import { AppShell } from "@/components/layout/app-shell";
 import { TriplesPage } from "@/pages/triples";
 import { OntologyPage } from "@/pages/ontology";
 import { ExtractionPage } from "@/pages/extraction";
 import { QueryPage } from "@/pages/query";
 import { ExplorerPage } from "@/pages/explorer";
-import { useHashRoute } from "@/hooks/use-hash-route";
 
 function App() {
   const route = useHashRoute();
 
-  let page;
+  const navigate = (href: string) => {
+    window.location.hash = href;
+  };
+
+  let page: React.ReactNode;
   switch (route) {
+    case "/triples":
+      page = <TriplesPage />;
+      break;
     case "/ontology":
       page = <OntologyPage />;
       break;
@@ -24,10 +31,16 @@ function App() {
       page = <ExplorerPage />;
       break;
     default:
-      page = <TriplesPage />;
+      // Dashboard placeholder — will be built in Task 9
+      page = <div className="text-muted-foreground">Dashboard coming soon...</div>;
+      break;
   }
 
-  return <Layout>{page}</Layout>;
+  return (
+    <AppShell currentRoute={route} onNavigate={navigate}>
+      {page}
+    </AppShell>
+  );
 }
 
 export default App;
