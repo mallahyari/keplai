@@ -5,7 +5,9 @@ import logging
 import re
 from typing import Any, TYPE_CHECKING
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
+
+from keplai.exceptions import QueryError
 
 if TYPE_CHECKING:
     from keplai.config import KeplAISettings
@@ -86,14 +88,17 @@ class NLQueryEngine:
             "- Use PREFIX declarations for cleaner queries.\n"
         )
 
-        response = self._client.chat.completions.create(
-            model=self._settings.openai_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question},
-            ],
-            temperature=0.0,
-        )
+        try:
+            response = self._client.chat.completions.create(
+                model=self._settings.openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": question},
+                ],
+                temperature=0.0,
+            )
+        except OpenAIError as exc:
+            raise QueryError(f"LLM call failed during SPARQL generation: {exc}") from exc
 
         sparql = response.choices[0].message.content or ""
         # Strip markdown code fences if present
@@ -147,6 +152,6 @@ class NLQueryEngine:
     def _validate_read_only(sparql: str) -> None:
         """Reject any SPARQL that attempts to modify the graph."""
         if _FORBIDDEN_PATTERNS.search(sparql):
-            raise ValueError(
+            raise QueryError(
                 "Only read-only SPARQL queries (SELECT/ASK/CONSTRUCT/DESCRIBE) are allowed."
             )

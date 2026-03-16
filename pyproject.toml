@@ -7,6 +7,19 @@ name = "keplai"
 version = "0.1.0"
 description = "SDK-first knowledge graph platform powered by Apache Jena Fuseki"
 requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Mehdi Allahyari"}]
+keywords = ["knowledge-graph", "rdf", "sparql", "jena", "fuseki", "ai", "nlp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "docker>=7.0.0",
     "rdflib>=7.0.0",
@@ -25,6 +38,20 @@ ai = [
     "openai>=1.30.0",
     "qdrant-client>=1.9.0",
 ]
+all = [
+    "keplai[api,ai]",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.scripts]
+keplai = "keplai.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires Docker and Fuseki"]

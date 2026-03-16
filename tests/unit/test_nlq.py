@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from keplai.config import KeplAISettings
+from keplai.exceptions import QueryError
 from keplai.nlq import NLQueryEngine
 
 
@@ -64,17 +65,17 @@ def test_ask_with_explanation():
 
 
 def test_validate_read_only_rejects_insert():
-    with pytest.raises(ValueError, match="read-only"):
+    with pytest.raises(QueryError, match="read-only"):
         NLQueryEngine._validate_read_only("INSERT DATA { <a> <b> <c> }")
 
 
 def test_validate_read_only_rejects_delete():
-    with pytest.raises(ValueError, match="read-only"):
+    with pytest.raises(QueryError, match="read-only"):
         NLQueryEngine._validate_read_only("DELETE WHERE { ?s ?p ?o }")
 
 
 def test_validate_read_only_rejects_drop():
-    with pytest.raises(ValueError, match="read-only"):
+    with pytest.raises(QueryError, match="read-only"):
         NLQueryEngine._validate_read_only("DROP GRAPH <http://example.org>")
 
 
@@ -89,7 +90,7 @@ def test_validate_read_only_allows_construct():
 
 def test_execute_sparql_enforces_read_only():
     engine = _make_engine()
-    with pytest.raises(ValueError, match="read-only"):
+    with pytest.raises(QueryError, match="read-only"):
         engine.execute_sparql("INSERT DATA { <a> <b> <c> }")
 
 

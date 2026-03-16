@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
+from keplai.exceptions import DisambiguationError
 from keplai.vectorstore.base import VectorStore
 
 if TYPE_CHECKING:
@@ -67,8 +68,11 @@ class EntityDisambiguator:
         return [{"name": item.text, **item.metadata} for item in items]
 
     def _embed(self, text: str) -> list[float]:
-        response = self._client.embeddings.create(
-            model=self._settings.embedding_model,
-            input=text,
-        )
+        try:
+            response = self._client.embeddings.create(
+                model=self._settings.embedding_model,
+                input=text,
+            )
+        except OpenAIError as exc:
+            raise DisambiguationError(f"Embedding call failed: {exc}") from exc
         return response.data[0].embedding

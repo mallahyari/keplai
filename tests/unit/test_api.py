@@ -1,0 +1,120 @@
+"""API tests using FastAPI TestClient with mocked KeplAI instance."""
+
+import pytest
+from contextlib import asynccontextmanager
+from unittest.mock import MagicMock, patch
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def mock_graph():
+    """Create a mocked KeplAI instance."""
+    graph = MagicMock()
+    graph._engine.is_healthy.return_value = True
+    graph._engine.endpoint = "http://localhost:3030"
+    graph._settings.fuseki_dataset = "keplai"
+    graph.find.return_value = [
+        {"s": "http://keplai.io/entity/Mehdi", "p": "http://keplai.io/ontology/founded", "o": "http://keplai.io/entity/BrandPulse"}
+    ]
+    graph.get_all_triples.return_value = [
+        {"s": "http://keplai.io/entity/Mehdi", "p": "http://keplai.io/ontology/founded", "o": "http://keplai.io/entity/BrandPulse"}
+    ]
+    graph.ontology.get_classes.return_value = [
+        {"uri": "http://keplai.io/ontology/Person", "name": "Person"}
+    ]
+    graph.ontology.get_properties.return_value = [
+        {"uri": "http://keplai.io/ontology/founded", "name": "founded", "domain": "Person", "range": "Company"}
+    ]
+    graph.ontology.get_schema.return_value = {
+        "classes": [{"uri": "http://keplai.io/ontology/Person", "name": "Person"}],
+        "properties": [{"uri": "http://keplai.io/ontology/founded", "name": "founded", "domain": "Person", "range": "Company"}],
+    }
+    return graph
+
+
+@pytest.fixture
+def client(mock_graph):
+    """Create a TestClient with the mocked graph injected."""
+    from api.dependencies import set_graph
+    set_graph(mock_graph)
+
+    @asynccontextmanager
+    async def noop_lifespan(app):
+        yield
+
+    # Import app without triggering real lifespan (which starts Docker)
+    with patch("api.main.KeplAI"):
+        from api.main import app
+        app.router.lifespan_context = noop_lifespan
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
+
+
+# -- Graph endpoints --
+
+def test_get_status(client, mock_graph):
+    resp = client.get("/api/graph/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["healthy"] is True
+    assert data["engine"] == "docker"
+
+
+def test_get_all_triples(client):
+    resp = client.get("/api/graph/triples/all")
+    assert resp.status_code == 200
+    triples = resp.json()
+    assert len(triples) == 1
+    assert triples[0]["subject"] == "http://keplai.io/entity/Mehdi"
+
+
+def test_add_triple(client, mock_graph):
+    resp = client.post("/api/graph/triples", json={
+        "subject": "Alice",
+        "predicate": "knows",
+        "object": "Bob",
+    })
+    assert resp.status_code == 201
+    mock_graph.add.assert_called_once_with("Alice", "knows", "Bob")
+
+
+def test_delete_triple(client, mock_graph):
+    resp = client.request("DELETE", "/api/graph/triples", json={
+        "subject": "Alice",
+        "predicate": "knows",
+        "object": "Bob",
+    })
+    assert resp.status_code == 200
+    mock_graph.delete.assert_called_once_with("Alice", "knows", "Bob")
+
+
+# -- Ontology endpoints --
+
+def test_get_classes(client):
+    resp = client.get("/api/ontology/classes")
+    assert resp.status_code == 200
+    classes = resp.json()
+    assert len(classes) == 1
+    assert classes[0]["name"] == "Person"
+
+
+def test_define_class(client, mock_graph):
+    resp = client.post("/api/ontology/classes", json={"name": "Company"})
+    assert resp.status_code == 201
+    mock_graph.ontology.define_class.assert_called_once_with("Company")
+
+
+def test_get_properties(client):
+    resp = client.get("/api/ontology/properties")
+    assert resp.status_code == 200
+    props = resp.json()
+    assert len(props) == 1
+    assert props[0]["name"] == "founded"
+
+
+def test_get_schema(client):
+    resp = client.get("/api/ontology/schema")
+    assert resp.status_code == 200
+    schema = resp.json()
+    assert "classes" in schema
+    assert "properties" in schema

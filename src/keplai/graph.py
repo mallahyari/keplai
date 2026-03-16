@@ -97,6 +97,31 @@ class KeplAI:
         jena.start()
         return cls(engine=jena, settings=settings)
 
+    @classmethod
+    def connect(
+        cls,
+        endpoint: str = "http://localhost:3030",
+        dataset: str = "keplai",
+        **overrides: Any,
+    ) -> KeplAI:
+        """Connect to an existing Fuseki instance without starting Docker.
+
+        Args:
+            endpoint: The Fuseki server URL (e.g. http://localhost:3030).
+            dataset: The dataset name on the Fuseki server.
+        """
+        settings = KeplAISettings(
+            fuseki_port=int(endpoint.rsplit(":", 1)[-1]) if ":" in endpoint.rsplit("/", 1)[-1] else 3030,
+            fuseki_dataset=dataset,
+            **overrides,
+        )
+        jena = JenaEngine(settings)
+        # Don't start Docker — just verify connectivity
+        if not jena.is_healthy():
+            from keplai.exceptions import EngineError
+            raise EngineError(f"Cannot connect to Fuseki at {endpoint}")
+        return cls(engine=jena, settings=settings)
+
     def stop(self) -> None:
         """Gracefully shut down the engine. Data persists via Docker volumes."""
         self._engine.stop()

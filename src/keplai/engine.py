@@ -5,9 +5,10 @@ import time
 
 import docker
 import httpx
-from docker.errors import NotFound
+from docker.errors import NotFound, DockerException
 
 from keplai.config import KeplAISettings
+from keplai.exceptions import EngineError
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,19 @@ class JenaEngine:
 
     def start(self) -> None:
         """Pull the Fuseki image (if needed), generate config, and start the container."""
-        self._client = docker.from_env()
+        try:
+            self._client = docker.from_env()
+        except DockerException as exc:
+            raise EngineError(
+                "Cannot connect to Docker. Is Docker installed and running?"
+            ) from exc
 
         # Pull image
         logger.info("Pulling Fuseki image %s …", self.settings.fuseki_image)
-        self._client.images.pull(self.settings.fuseki_image)
+        try:
+            self._client.images.pull(self.settings.fuseki_image)
+        except DockerException as exc:
+            raise EngineError(f"Failed to pull image {self.settings.fuseki_image}: {exc}") from exc
 
         # Reuse existing container if it exists
         try:
@@ -108,6 +117,6 @@ class JenaEngine:
             if self.is_healthy():
                 return
             time.sleep(interval)
-        raise TimeoutError(
+        raise EngineError(
             f"Fuseki did not become ready within {timeout}s at {self.endpoint}"
         )

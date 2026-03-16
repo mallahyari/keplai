@@ -4,7 +4,9 @@ import json
 import logging
 from typing import Any, TYPE_CHECKING
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
+
+from keplai.exceptions import ExtractionError
 
 if TYPE_CHECKING:
     from keplai.config import KeplAISettings
@@ -93,15 +95,18 @@ class AIExtractor:
         return self._call_llm(system_prompt, text)
 
     def _call_llm(self, system_prompt: str, text: str) -> list[ExtractedTriple]:
-        response = self._client.chat.completions.create(
-            model=self._settings.openai_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.0,
-        )
+        try:
+            response = self._client.chat.completions.create(
+                model=self._settings.openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+            )
+        except OpenAIError as exc:
+            raise ExtractionError(f"LLM call failed: {exc}") from exc
 
         content = response.choices[0].message.content or "{}"
         try:

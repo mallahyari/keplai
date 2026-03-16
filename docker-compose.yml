@@ -1,0 +1,39 @@
+services:
+  fuseki:
+    image: stain/jena-fuseki
+    container_name: keplai-fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      FUSEKI_DATASET_1: keplai
+      ADMIN_PASSWORD: keplai-admin
+    volumes:
+      - fuseki-data:/fuseki
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: keplai-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      KEPLAI_FUSEKI_PORT: "3030"
+      KEPLAI_FUSEKI_CONTAINER_NAME: keplai-fuseki
+    depends_on:
+      - fuseki
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: keplai-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  fuseki-data:
