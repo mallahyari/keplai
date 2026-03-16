@@ -119,3 +119,16 @@ class QueryResultWithExplanation(BaseModel):
     results: list[dict[str, str]]
     sparql: str
     explanation: str
+
+
+# -- Import schemas --
+
+class ImportUrlRequest(BaseModel):
+    url: str
+
+
+class ImportResponse(BaseModel):
+    triples_loaded: int
+    format: str
+    classes: list[ClassOut]
+    properties: list[PropertyOut]
