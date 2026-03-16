@@ -22,6 +22,12 @@ from keplai.exceptions import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Load .env before creating settings
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
     # Startup: provision the graph engine
     kg = KeplAI.start()
     set_graph(kg)

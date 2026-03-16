@@ -102,7 +102,10 @@ class NLQueryEngine:
                 temperature=0.0,
             )
         except OpenAIError as exc:
-            logger.error("OpenAI call failed during SPARQL generation: %s", exc)
+            logger.error(
+                "OpenAI call failed during SPARQL generation: %s (type=%s, cause=%r)",
+                exc, type(exc).__name__, exc.__cause__,
+            )
             raise QueryError(f"LLM call failed during SPARQL generation: {exc}") from exc
 
         sparql = response.choices[0].message.content or ""
