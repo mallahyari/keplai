@@ -118,6 +118,36 @@ def test_delete_ontology_removes_graph_and_metadata():
     assert any(meta_graph in u and "DELETE" in u for u in updates)
 
 
+def test_get_schema_with_graph_uri_filters_by_graph():
+    """get_schema(graph_uri=...) should query only that named graph."""
+    graph = _make_graph()
+    manager = OntologyManager(graph)
+
+    queries = []
+    graph._execute_query = MagicMock(side_effect=lambda s: queries.append(s) or [])
+
+    manager.get_schema(graph_uri="http://example.org/graph/foaf")
+
+    # All queries should reference the graph URI
+    for q in queries:
+        assert "http://example.org/graph/foaf" in q
+
+
+def test_get_schema_without_graph_uri_queries_all_graphs():
+    """get_schema() without graph_uri should query default + named graphs."""
+    graph = _make_graph()
+    manager = OntologyManager(graph)
+
+    queries = []
+    graph._execute_query = MagicMock(side_effect=lambda s: queries.append(s) or [])
+
+    manager.get_schema()
+
+    # Should use UNION with GRAPH ?g pattern
+    for q in queries:
+        assert "GRAPH ?g" in q
+
+
 def test_full_multi_ontology_workflow():
     """Verify: load two ontologies, they get different IDs and graph URIs."""
     graph = _make_graph()

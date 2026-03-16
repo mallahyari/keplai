@@ -37,14 +37,27 @@ class OntologyManager:
         self._graph._execute_update(sparql)
         logger.debug("Defined class: %s", name)
 
-    def get_classes(self) -> list[dict[str, str]]:
-        """List all defined OWL classes."""
-        sparql = (
-            f"SELECT ?cls ?label WHERE {{ "
-            f"?cls {RDF.type.n3()} {OWL.Class.n3()} . "
-            f"OPTIONAL {{ ?cls {RDFS.label.n3()} ?label }} "
-            f"}}"
-        )
+    def get_classes(self, graph_uri: str | None = None) -> list[dict[str, str]]:
+        """List OWL classes, optionally filtered to a specific named graph."""
+        if graph_uri:
+            sparql = (
+                f"SELECT ?cls ?label WHERE {{ "
+                f"  GRAPH <{graph_uri}> {{ "
+                f"    ?cls {RDF.type.n3()} {OWL.Class.n3()} . "
+                f"    OPTIONAL {{ ?cls {RDFS.label.n3()} ?label }} "
+                f"  }} "
+                f"}}"
+            )
+        else:
+            sparql = (
+                f"SELECT DISTINCT ?cls ?label WHERE {{ "
+                f"{{ ?cls {RDF.type.n3()} {OWL.Class.n3()} . "
+                f"  OPTIONAL {{ ?cls {RDFS.label.n3()} ?label }} }} "
+                f"UNION "
+                f"{{ GRAPH ?g {{ ?cls {RDF.type.n3()} {OWL.Class.n3()} . "
+                f"  OPTIONAL {{ ?cls {RDFS.label.n3()} ?label }} }} }} "
+                f"}}"
+            )
         rows = self._graph._execute_query(sparql)
         results = []
         for r in rows:
@@ -96,18 +109,42 @@ class OntologyManager:
         self._graph._execute_update(sparql)
         logger.debug("Defined property: %s (%s → %s)", name, domain, range)
 
-    def get_properties(self) -> list[dict[str, str]]:
-        """List all defined properties with domain and range."""
-        sparql = (
-            f"SELECT ?prop ?label ?domain ?range WHERE {{ "
-            f"{{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
-            f"UNION "
-            f"{{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
-            f"OPTIONAL {{ ?prop {RDFS.label.n3()} ?label }} "
-            f"OPTIONAL {{ ?prop {RDFS.domain.n3()} ?domain }} "
-            f"OPTIONAL {{ ?prop {RDFS.range.n3()} ?range }} "
-            f"}}"
-        )
+    def get_properties(self, graph_uri: str | None = None) -> list[dict[str, str]]:
+        """List all defined properties with domain and range, optionally filtered."""
+        if graph_uri:
+            sparql = (
+                f"SELECT ?prop ?label ?domain ?range WHERE {{ "
+                f"  GRAPH <{graph_uri}> {{ "
+                f"    {{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
+                f"    UNION "
+                f"    {{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
+                f"    OPTIONAL {{ ?prop {RDFS.label.n3()} ?label }} "
+                f"    OPTIONAL {{ ?prop {RDFS.domain.n3()} ?domain }} "
+                f"    OPTIONAL {{ ?prop {RDFS.range.n3()} ?range }} "
+                f"  }} "
+                f"}}"
+            )
+        else:
+            sparql = (
+                f"SELECT DISTINCT ?prop ?label ?domain ?range WHERE {{ "
+                f"{{ "
+                f"  {{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
+                f"  UNION "
+                f"  {{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
+                f"  OPTIONAL {{ ?prop {RDFS.label.n3()} ?label }} "
+                f"  OPTIONAL {{ ?prop {RDFS.domain.n3()} ?domain }} "
+                f"  OPTIONAL {{ ?prop {RDFS.range.n3()} ?range }} "
+                f"}} UNION {{ "
+                f"  GRAPH ?g {{ "
+                f"    {{ ?prop {RDF.type.n3()} {OWL.ObjectProperty.n3()} }} "
+                f"    UNION "
+                f"    {{ ?prop {RDF.type.n3()} {OWL.DatatypeProperty.n3()} }} "
+                f"    OPTIONAL {{ ?prop {RDFS.label.n3()} ?label }} "
+                f"    OPTIONAL {{ ?prop {RDFS.domain.n3()} ?domain }} "
+                f"    OPTIONAL {{ ?prop {RDFS.range.n3()} ?range }} "
+                f"  }} "
+                f"}} }}"
+            )
         rows = self._graph._execute_query(sparql)
         results = []
         for r in rows:
@@ -135,11 +172,11 @@ class OntologyManager:
     # Schema
     # ------------------------------------------------------------------
 
-    def get_schema(self) -> dict[str, Any]:
-        """Return the full ontology as a structured dict."""
+    def get_schema(self, graph_uri: str | None = None) -> dict[str, Any]:
+        """Return the ontology schema, optionally filtered to a named graph."""
         return {
-            "classes": self.get_classes(),
-            "properties": self.get_properties(),
+            "classes": self.get_classes(graph_uri=graph_uri),
+            "properties": self.get_properties(graph_uri=graph_uri),
         }
 
     # ------------------------------------------------------------------
