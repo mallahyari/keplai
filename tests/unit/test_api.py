@@ -208,3 +208,20 @@ def test_get_ontology_schema(client, mock_graph):
     data = resp.json()
     assert len(data["classes"]) == 1
     assert data["classes"][0]["name"] == "Cat"
+
+
+def test_get_stats(client, mock_graph):
+    mock_graph.ontology.list_ontologies.return_value = [
+        {"id": "test-id", "name": "Test", "source": "test.ttl",
+         "graph_uri": "http://keplai.io/graph/test",
+         "import_date": "2026-03-15T00:00:00Z",
+         "classes_count": 2, "properties_count": 3}
+    ]
+    resp = client.get("/api/graph/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["triple_count"] == 1
+    assert data["entity_count"] == 2
+    assert data["ontology_count"] == 1
+    assert data["class_count"] == 1
+    assert data["property_count"] == 1

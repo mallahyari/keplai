@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_graph
-from api.schemas import TripleIn, TripleOut, TripleQuery, StatusResponse
+from api.schemas import TripleIn, TripleOut, TripleQuery, StatusResponse, StatsResponse
 from keplai.graph import KeplAI
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
@@ -49,4 +49,22 @@ def engine_status(graph: KeplAI = Depends(get_graph)) -> dict:
         "healthy": graph._engine.is_healthy(),
         "endpoint": graph._engine.endpoint,
         "dataset": graph._settings.fuseki_dataset,
+    }
+
+
+@router.get("/stats", response_model=StatsResponse)
+def get_stats(graph: KeplAI = Depends(get_graph)):
+    triples = graph.get_all_triples()
+    ontologies = graph.ontology.list_ontologies()
+    schema = graph.ontology.get_schema()
+    entities = set()
+    for t in triples:
+        entities.add(t.get("s", t.get("subject", "")))
+        entities.add(t.get("o", t.get("object", "")))
+    return {
+        "triple_count": len(triples),
+        "entity_count": len(entities),
+        "ontology_count": len(ontologies),
+        "class_count": len(schema.get("classes", [])),
+        "property_count": len(schema.get("properties", [])),
     }

@@ -145,3 +145,11 @@ class OntologyMetadataOut(BaseModel):
     import_date: str
     classes_count: int
     properties_count: int
+
+
+class StatsResponse(BaseModel):
+    triple_count: int
+    entity_count: int
+    ontology_count: int
+    class_count: int
+    property_count: int

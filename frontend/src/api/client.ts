@@ -14,6 +14,7 @@ import type {
   SimilarEntity,
   QueryResult,
   QueryResultWithExplanation,
+  GraphStats,
 } from "@/types/graph";
 
 const BASE = "/api/graph";
@@ -33,6 +34,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getStatus: () => request<EngineStatus>(`${BASE}/status`),
+
+  getStats: () => request<GraphStats>(`${BASE}/stats`),
 
   getAllTriples: () => request<Triple[]>(`${BASE}/triples/all`),
 

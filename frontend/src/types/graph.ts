@@ -125,3 +125,11 @@ export interface GraphLink {
   target: string;
   label: string;
 }
+
+export interface GraphStats {
+  triple_count: number;
+  entity_count: number;
+  ontology_count: number;
+  class_count: number;
+  property_count: number;
+}
