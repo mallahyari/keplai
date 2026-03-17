@@ -15,6 +15,8 @@ import type {
   QueryResult,
   QueryResultWithExplanation,
   GraphStats,
+  ProvenanceRecord,
+  EntityContext,
 } from "@/types/graph";
 
 const BASE = "/api/graph";
@@ -158,4 +160,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ sparql }),
     }),
+
+  // Provenance & Entity Context
+  getTripleProvenance: (subject: string, predicate: string, obj: string) =>
+    request<ProvenanceRecord | null>(
+      `${BASE}/triples/provenance?subject=${encodeURIComponent(subject)}&predicate=${encodeURIComponent(predicate)}&obj=${encodeURIComponent(obj)}`
+    ),
+
+  getEntityContext: (name: string) =>
+    request<EntityContext>(`/api/entities/${encodeURIComponent(name)}/context`),
 };
