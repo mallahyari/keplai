@@ -133,3 +133,22 @@ export interface GraphStats {
   class_count: number;
   property_count: number;
 }
+
+// Provenance types
+
+export interface ProvenanceRecord {
+  method: "manual" | "extraction" | "import";
+  created_at: string;
+  source_text?: string;
+  extraction_mode?: string;
+  ontology_source?: string;
+  disambiguation?: DisambiguationInfo;
+}
+
+export interface EntityContext {
+  entity: string;
+  triples_as_subject: Triple[];
+  triples_as_object: Triple[];
+  entity_type: string | null;
+  similar_entities: SimilarEntity[];
+}
