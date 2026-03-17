@@ -56,6 +56,7 @@ function triplesToGraph(triples: Triple[], limit: number = NODE_LIMIT): GraphDat
 }
 
 export function ExplorerPage() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-force-graph-2d lacks typed refs
   const graphRef = useRef<any>(null);
   const [allTriples, setAllTriples] = useState<Triple[]>([]);
   const [filter, setFilter] = useState("");
@@ -109,6 +110,7 @@ export function ExplorerPage() {
     return allTriples.filter((t) => t.subject === selected || t.object === selected);
   }, [allTriples, selected]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-force-graph-2d node type
   const handleNodeClick = useCallback((node: any) => {
     setSelected((prev) => (prev === node.id ? null : node.id));
   }, []);
@@ -154,8 +156,10 @@ export function ExplorerPage() {
               ref={graphRef}
               graphData={graphData}
               onNodeClick={handleNodeClick}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-force-graph-2d callback types
               nodeLabel={(node: any) => node.label}
               nodeAutoColorBy="label"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-force-graph-2d callback types
               nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
                 const label = node.label || "";
                 const fontSize = 12 / globalScale;

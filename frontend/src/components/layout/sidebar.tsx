@@ -55,8 +55,8 @@ export function Sidebar({ currentRoute, onNavigate }: SidebarProps) {
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 1024px)");
     const handler = (e: MediaQueryListEvent) => setCollapsed(e.matches);
+    if (mql.matches) setCollapsed(true); // eslint-disable-line react-hooks/set-state-in-effect -- initial sync with media query
     mql.addEventListener("change", handler);
-    if (mql.matches) setCollapsed(true);
     return () => mql.removeEventListener("change", handler);
   }, []);
 
