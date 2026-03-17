@@ -245,6 +245,20 @@ class OntologyManager:
         ont_graph = graph_uri or f"{self._graph._settings.graph_base_uri}{ont_id}"
 
         total = self._batch_insert(rdf_graph, batch_size=batch_size, graph_uri=ont_graph)
+
+        # Record provenance for each imported triple
+        if self._graph.provenance is not None:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            source_name = name or path.name
+            for s, p, o in rdf_graph:
+                self._graph.provenance.record(
+                    str(s), str(p), str(o),
+                    method="import",
+                    created_at=now,
+                    ontology_source=source_name,
+                )
+
         detected = self._detect_schema_from_graph(rdf_graph)
 
         # Store metadata
