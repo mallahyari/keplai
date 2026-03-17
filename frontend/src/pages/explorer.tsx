@@ -1,25 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Plus, Minus, X, RefreshCw } from "lucide-react";
 import { api } from "@/api/client";
 import type { Triple, GraphNode, GraphLink } from "@/types/graph";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+
+const NODE_LIMIT = 200;
 
 interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
 }
 
-function triplesToGraph(triples: Triple[]): GraphData {
+function shortName(uri: string): string {
+  if (uri.includes("/")) return uri.split("/").pop() || uri;
+  if (uri.includes("#")) return uri.split("#").pop() || uri;
+  return uri;
+}
+
+function triplesToGraph(triples: Triple[], limit: number = NODE_LIMIT): GraphData {
   const nodeMap = new Map<string, GraphNode>();
   const links: GraphLink[] = [];
 
@@ -38,162 +42,222 @@ function triplesToGraph(triples: Triple[]): GraphData {
       target: t.object,
       label: shortName(t.predicate),
     });
+
+    if (nodeMap.size >= limit) break;
   }
 
-  return { nodes: Array.from(nodeMap.values()), links };
-}
+  // Only include links where both source and target are in the node set
+  const nodeIds = new Set(nodeMap.keys());
+  const filteredLinks = links.filter(
+    (l) => nodeIds.has(l.source as string) && nodeIds.has(l.target as string)
+  );
 
-function shortName(uri: string): string {
-  if (uri.includes("/")) return uri.split("/").pop() || uri;
-  if (uri.includes("#")) return uri.split("#").pop() || uri;
-  return uri;
+  return { nodes: Array.from(nodeMap.values()), links: filteredLinks };
 }
 
 export function ExplorerPage() {
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
+  const graphRef = useRef<any>(null);
   const [allTriples, setAllTriples] = useState<Triple[]>([]);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [selectedTriples, setSelectedTriples] = useState<Triple[]>([]);
   const [loading, setLoading] = useState(true);
-  const graphRef = useRef<any>(null);
 
-  const loadTriples = useCallback(async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const triples = await api.getAllTriples();
       setAllTriples(triples);
-      setGraphData(triplesToGraph(triples));
     } catch {
-      // ignore
+      // silently fail
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadTriples();
-  }, [loadTriples]);
+    refresh();
+  }, [refresh]);
 
-  // Filter graph
-  useEffect(() => {
-    if (!filter.trim()) {
-      setGraphData(triplesToGraph(allTriples));
-      return;
+  // Build graph with filter and limit
+  const graphData = useMemo(() => {
+    let triples = allTriples;
+    if (filter.trim()) {
+      const lower = filter.toLowerCase();
+      triples = allTriples.filter(
+        (t) =>
+          shortName(t.subject).toLowerCase().includes(lower) ||
+          shortName(t.predicate).toLowerCase().includes(lower) ||
+          shortName(t.object).toLowerCase().includes(lower)
+      );
     }
-    const lower = filter.toLowerCase();
-    const filtered = allTriples.filter(
-      (t) =>
-        shortName(t.subject).toLowerCase().includes(lower) ||
-        shortName(t.predicate).toLowerCase().includes(lower) ||
-        shortName(t.object).toLowerCase().includes(lower)
-    );
-    setGraphData(triplesToGraph(filtered));
-  }, [filter, allTriples]);
+    return triplesToGraph(triples, NODE_LIMIT);
+  }, [allTriples, filter]);
 
-  // Handle node click
-  function handleNodeClick(node: any) {
-    setSelected(node.id);
-    const related = allTriples.filter(
-      (t) => t.subject === node.id || t.object === node.id
-    );
-    setSelectedTriples(related);
-  }
+  // Total unique node count (before limit)
+  const totalNodeCount = useMemo(() => {
+    const nodeSet = new Set<string>();
+    for (const t of allTriples) {
+      nodeSet.add(t.subject);
+      nodeSet.add(t.object);
+    }
+    return nodeSet.size;
+  }, [allTriples]);
+
+  // Connected triples for selected node
+  const selectedTriples = useMemo(() => {
+    if (!selected) return [];
+    return allTriples.filter((t) => t.subject === selected || t.object === selected);
+  }, [allTriples, selected]);
+
+  const handleNodeClick = useCallback((node: any) => {
+    setSelected((prev) => (prev === node.id ? null : node.id));
+  }, []);
+
+  const zoomIn = () => graphRef.current?.zoom(graphRef.current.zoom() * 1.5, 300);
+  const zoomOut = () => graphRef.current?.zoom(graphRef.current.zoom() / 1.5, 300);
 
   return (
     <div className="space-y-4">
+      {/* Controls row */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Graph Explorer</h2>
         <div className="flex items-center gap-2">
           <Input
-            placeholder="Filter nodes…"
+            placeholder="Filter nodes..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="w-60"
+            className="w-64 text-sm"
           />
-          <Button size="sm" variant="outline" onClick={loadTriples}>
-            Refresh
-          </Button>
+          <span className="text-xs text-muted-foreground">
+            Showing {graphData.nodes.length} of {totalNodeCount} nodes
+          </span>
         </div>
+        <Button variant="outline" size="sm" onClick={refresh}>
+          <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+        </Button>
       </div>
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading graph…</p>
-      ) : graphData.nodes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No triples in the graph yet.</p>
-      ) : (
-        <div className="border rounded-md overflow-hidden bg-background" style={{ height: 500 }}>
-          <ForceGraph2D
-            ref={graphRef}
-            graphData={graphData}
-            nodeLabel="label"
-            nodeAutoColorBy="label"
-            nodeCanvasObject={(node: any, ctx, globalScale) => {
-              const label = node.label || "";
-              const fontSize = 12 / globalScale;
-              ctx.font = `${fontSize}px Sans-Serif`;
-              const isSelected = node.id === selected;
+      {/* Graph + detail panel side by side */}
+      <div className="flex gap-4">
+        {/* Graph container */}
+        <div
+          className="relative flex-1 rounded-md border bg-card overflow-hidden"
+          style={{ height: 500 }}
+        >
+          {loading ? (
+            <Skeleton className="h-full w-full" />
+          ) : graphData.nodes.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+              No triples in the graph yet.
+            </div>
+          ) : (
+            <ForceGraph2D
+              ref={graphRef}
+              graphData={graphData}
+              onNodeClick={handleNodeClick}
+              nodeLabel={(node: any) => node.label}
+              nodeAutoColorBy="label"
+              nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+                const label = node.label || "";
+                const fontSize = 12 / globalScale;
+                ctx.font = `${fontSize}px Sans-Serif`;
+                const isSelected = node.id === selected;
 
-              // Node circle
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI);
-              ctx.fillStyle = isSelected ? "#f97316" : node.color || "#6366f1";
-              ctx.fill();
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = isSelected ? "#f97316" : node.color || "#6366f1";
+                ctx.fill();
 
-              // Label
-              ctx.textAlign = "center";
-              ctx.textBaseline = "middle";
-              ctx.fillStyle = isSelected ? "#f97316" : "#a1a1aa";
-              ctx.fillText(label, node.x, node.y + 9);
-            }}
-            linkLabel="label"
-            linkDirectionalArrowLength={4}
-            linkDirectionalArrowRelPos={1}
-            linkColor={() => "#52525b"}
-            onNodeClick={handleNodeClick}
-            width={undefined}
-            height={500}
-          />
-        </div>
-      )}
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = isSelected ? "#f97316" : "#a1a1aa";
+                ctx.fillText(label, node.x, node.y + 9);
+              }}
+              linkLabel="label"
+              linkDirectionalArrowLength={4}
+              linkDirectionalArrowRelPos={1}
+              linkColor={() => "#52525b"}
+              width={undefined}
+              height={500}
+            />
+          )}
 
-      {/* Stats */}
-      <div className="flex gap-2">
-        <Badge variant="secondary">{graphData.nodes.length} nodes</Badge>
-        <Badge variant="secondary">{graphData.links.length} edges</Badge>
-      </div>
-
-      {/* Selected node details */}
-      {selected && selectedTriples.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium">
-              Triples for <span className="font-semibold">{shortName(selected)}</span>
-            </h3>
-            <Button size="sm" variant="ghost" onClick={() => setSelected(null)}>
-              Clear
+          {/* Zoom controls overlay */}
+          <div className="absolute bottom-3 right-3 flex flex-col gap-1">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={zoomIn}>
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={zoomOut}>
+              <Minus className="h-4 w-4" />
             </Button>
           </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Subject</TableHead>
-                <TableHead>Predicate</TableHead>
-                <TableHead>Object</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {selectedTriples.map((t, i) => (
-                <TableRow key={i}>
-                  <TableCell className="text-sm">{shortName(t.subject)}</TableCell>
-                  <TableCell className="text-sm">{shortName(t.predicate)}</TableCell>
-                  <TableCell className="text-sm">{shortName(t.object)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+
+          {/* Legend overlay */}
+          <div className="absolute top-3 right-3 rounded-md border bg-card/90 p-2 text-xs space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-indigo-500 inline-block" />
+              <span>Entity</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-orange-500 inline-block" />
+              <span>Selected</span>
+            </div>
+          </div>
+
+          {/* Onboarding hint */}
+          {!selected && !loading && graphData.nodes.length > 0 && (
+            <p className="absolute bottom-3 left-3 text-xs text-muted-foreground bg-card/80 px-2 py-1 rounded">
+              Click a node to see its connections
+            </p>
+          )}
         </div>
-      )}
+
+        {/* Detail panel */}
+        {selected && (
+          <div className="w-80 shrink-0 rounded-md border bg-card overflow-hidden">
+            <div className="flex items-center justify-between p-3 border-b">
+              <h3 className="text-sm font-medium truncate">{shortName(selected)}</h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setSelected(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 450 }}>
+              {selectedTriples.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Subject</TableHead>
+                      <TableHead className="text-xs">Predicate</TableHead>
+                      <TableHead className="text-xs">Object</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedTriples.map((t, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="text-xs font-mono">
+                          {shortName(t.subject)}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono">
+                          {shortName(t.predicate)}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono">
+                          {shortName(t.object)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="p-3 text-xs text-muted-foreground">No connected triples.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
