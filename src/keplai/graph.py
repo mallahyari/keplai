@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from keplai.extractor import AIExtractor
     from keplai.disambiguator import EntityDisambiguator
     from keplai.nlq import NLQueryEngine
+    from keplai.provenance import ProvenanceStore
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class KeplAI:
         self._extractor: AIExtractor | None = None
         self._disambiguator: EntityDisambiguator | None = None
         self._nlq: NLQueryEngine | None = None
+        self._provenance: ProvenanceStore | None = None
 
     @property
     def ontology(self) -> OntologyManager:
@@ -67,6 +69,14 @@ class KeplAI:
             from keplai.nlq import NLQueryEngine
             self._nlq = NLQueryEngine(self._settings, self)
         return self._nlq
+
+    @property
+    def provenance(self) -> ProvenanceStore | None:
+        """Access the provenance store (lazy-loaded). None if path not configured."""
+        if self._provenance is None and self._settings.provenance_path:
+            from keplai.provenance import ProvenanceStore
+            self._provenance = ProvenanceStore(path=self._settings.provenance_path)
+        return self._provenance
 
     async def ask(self, question: str) -> dict[str, Any]:
         """Ask a natural-language question against the knowledge graph."""
@@ -151,7 +161,26 @@ class KeplAI:
             if obj and obj[0].isupper() and " " not in obj:
                 obj, obj_score, obj_match = await self.disambiguator.resolve(obj)
 
-            self.add(subj, t.predicate, obj)
+            self.add(subj, t.predicate, obj, _record_provenance=False)
+            if self.provenance is not None:
+                from datetime import datetime, timezone
+                self.provenance.record(
+                    str(self._to_entity_uri(subj)),
+                    str(self._to_predicate_uri(t.predicate)),
+                    str(self._to_object(obj)),
+                    method="extraction",
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    source_text=text,
+                    extraction_mode=mode,
+                    disambiguation={
+                        "subject_original": t.subject,
+                        "subject_matched": subj_match,
+                        "subject_score": subj_score,
+                        "object_original": t.object,
+                        "object_matched": obj_match,
+                        "object_score": obj_score,
+                    },
+                )
 
             results.append({
                 "subject": subj,
@@ -207,6 +236,7 @@ class KeplAI:
         predicate: str,
         obj: str | int | float,
         graph_uri: str | None = None,
+        _record_provenance: bool = True,
     ) -> None:
         """Insert a single triple into a named graph.
 
@@ -236,6 +266,13 @@ class KeplAI:
         sparql = f"INSERT DATA {{ GRAPH <{target}> {{ {triples_block} }} }}"
         self._execute_update(sparql)
         logger.debug("Added triple: %s %s %s (graph: %s)", subject, predicate, obj, target)
+        if _record_provenance and self.provenance is not None:
+            from datetime import datetime, timezone
+            self.provenance.record(
+                str(s), str(p), str(o),
+                method="manual",
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
 
     def find(
         self,
@@ -290,6 +327,8 @@ class KeplAI:
         sparql = f"DELETE DATA {{ GRAPH <{target}> {{ {s.n3()} {p.n3()} {o.n3()} }} }}"
         self._execute_update(sparql)
         logger.debug("Deleted triple: %s %s %s (graph: %s)", subject, predicate, obj, target)
+        if self.provenance is not None:
+            self.provenance.delete(str(s), str(p), str(o))
 
     def get_all_triples(self) -> list[dict[str, str]]:
         """Return every triple across all named graphs (excluding metadata)."""
