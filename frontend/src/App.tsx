@@ -23,7 +23,7 @@ function App() {
       page = <OntologyPage />;
       break;
     case "/extraction":
-      page = <ExtractionPage />;
+      page = <ExtractionPage onNavigate={navigate} />;
       break;
     case "/query":
       page = <QueryPage />;
