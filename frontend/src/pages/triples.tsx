@@ -12,6 +12,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { shortName } from "@/lib/graph-utils";
+import { TripleDetailPanel } from "@/components/triples/triple-detail-panel";
 
 const PAGE_SIZE = 50;
 
@@ -45,6 +48,12 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Triple | null>(null);
+
+  // Detail panel
+  const [selectedTriple, setSelectedTriple] = useState<Triple | null>(null);
+
+  const isSelectedTriple = (a: Triple | null, b: Triple) =>
+    a !== null && a.subject === b.subject && a.predicate === b.predicate && a.object === b.object;
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -115,6 +124,9 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
       await api.deleteTriple(t);
       toast.success("Triple deleted");
       refresh();
+      if (selectedTriple && isSelectedTriple(selectedTriple, t)) {
+        setSelectedTriple(null);
+      }
     } catch {
       toast.error("Failed to delete triple");
     }
@@ -156,63 +168,84 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
         </div>
       )}
 
-      {/* Table */}
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("subject")}>
-                Subject{sortIndicator("subject")}
-              </TableHead>
-              <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("predicate")}>
-                Predicate{sortIndicator("predicate")}
-              </TableHead>
-              <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("object")}>
-                Object{sortIndicator("object")}
-              </TableHead>
-              <TableHead className="w-12.5" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell />
-                </TableRow>
-              ))
-            ) : paginated.length === 0 ? (
+      {/* Table + Detail Panel */}
+      <div className="flex gap-4">
+        {/* Table */}
+        <div className="rounded-md border overflow-x-auto flex-1 min-w-0">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={4}>
-                  <EmptyState
-                    icon={Database}
-                    title="No triples yet"
-                    description="Add your first triple or extract from text."
-                    actions={[
-                      { label: "Add Triple", onClick: () => setAddOpen(true) },
-                      ...(onNavigate ? [{ label: "Extract from Text", onClick: () => onNavigate("/extraction"), variant: "outline" as const }] : []),
-                    ]}
-                  />
-                </TableCell>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("subject")}>
+                  Subject{sortIndicator("subject")}
+                </TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("predicate")}>
+                  Predicate{sortIndicator("predicate")}
+                </TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("object")}>
+                  Object{sortIndicator("object")}
+                </TableHead>
+                <TableHead className="w-12.5" />
               </TableRow>
-            ) : (
-              paginated.map((t, i) => (
-                <TableRow key={i}>
-                  <TableCell className="font-mono text-sm">{t.subject}</TableCell>
-                  <TableCell className="font-mono text-sm">{t.predicate}</TableCell>
-                  <TableCell className="font-mono text-sm">{t.object}</TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(t)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell />
+                  </TableRow>
+                ))
+              ) : paginated.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <EmptyState
+                      icon={Database}
+                      title="No triples yet"
+                      description="Add your first triple or extract from text."
+                      actions={[
+                        { label: "Add Triple", onClick: () => setAddOpen(true) },
+                        ...(onNavigate ? [{ label: "Extract from Text", onClick: () => onNavigate("/extraction"), variant: "outline" as const }] : []),
+                      ]}
+                    />
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                paginated.map((t, i) => (
+                  <TableRow
+                    key={i}
+                    className={cn(
+                      "cursor-pointer",
+                      isSelectedTriple(selectedTriple, t) && "bg-accent/30"
+                    )}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest("button")) return;
+                      setSelectedTriple(isSelectedTriple(selectedTriple, t) ? null : t);
+                    }}
+                  >
+                    <TableCell className="font-mono text-sm">{shortName(t.subject)}</TableCell>
+                    <TableCell className="font-mono text-sm">{shortName(t.predicate)}</TableCell>
+                    <TableCell className="font-mono text-sm">{shortName(t.object)}</TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(t)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Detail panel */}
+        {selectedTriple && (
+          <TripleDetailPanel
+            triple={selectedTriple}
+            onClose={() => setSelectedTriple(null)}
+          />
+        )}
       </div>
 
       {/* Pagination */}
