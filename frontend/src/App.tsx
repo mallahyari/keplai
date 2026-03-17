@@ -5,6 +5,7 @@ import { OntologyPage } from "@/pages/ontology";
 import { ExtractionPage } from "@/pages/extraction";
 import { QueryPage } from "@/pages/query";
 import { ExplorerPage } from "@/pages/explorer";
+import { DashboardPage } from "@/pages/dashboard";
 
 function App() {
   const route = useHashRoute();
@@ -31,8 +32,7 @@ function App() {
       page = <ExplorerPage />;
       break;
     default:
-      // Dashboard placeholder — will be built in Task 9
-      page = <div className="text-muted-foreground">Dashboard coming soon...</div>;
+      page = <DashboardPage onNavigate={navigate} />;
       break;
   }
 
