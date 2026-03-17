@@ -3,6 +3,7 @@ import ForceGraph2D from "react-force-graph-2d";
 import { Plus, Minus, X, RefreshCw } from "lucide-react";
 import { api } from "@/api/client";
 import type { Triple, GraphNode, GraphLink } from "@/types/graph";
+import { shortName } from "@/lib/graph-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,12 +16,6 @@ const NODE_LIMIT = 200;
 interface GraphData {
   nodes: GraphNode[];
   links: GraphLink[];
-}
-
-function shortName(uri: string): string {
-  if (uri.includes("/")) return uri.split("/").pop() || uri;
-  if (uri.includes("#")) return uri.split("#").pop() || uri;
-  return uri;
 }
 
 function triplesToGraph(triples: Triple[], limit: number = NODE_LIMIT): GraphData {
