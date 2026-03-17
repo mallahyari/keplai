@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from api.dependencies import get_graph
-from api.schemas import TripleIn, TripleOut, TripleQuery, StatusResponse, StatsResponse
+from api.schemas import TripleIn, TripleOut, TripleQuery, StatusResponse, StatsResponse, ProvenanceResponse
 from keplai.graph import KeplAI
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
@@ -68,3 +68,15 @@ def get_stats(graph: KeplAI = Depends(get_graph)):
         "class_count": len(schema.get("classes", [])),
         "property_count": len(schema.get("properties", [])),
     }
+
+
+@router.get("/triples/provenance", response_model=ProvenanceResponse | None)
+def get_provenance(
+    subject: str,
+    predicate: str,
+    obj: str,
+    graph: KeplAI = Depends(get_graph),
+):
+    if graph.provenance is None:
+        return None
+    return graph.provenance.get(subject, predicate, obj)

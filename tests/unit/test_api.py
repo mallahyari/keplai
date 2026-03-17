@@ -225,3 +225,38 @@ def test_get_stats(client, mock_graph):
     assert data["ontology_count"] == 1
     assert data["class_count"] == 1
     assert data["property_count"] == 1
+
+
+# -- Provenance endpoints --
+
+def test_get_provenance_found(client, mock_graph):
+    mock_graph.provenance.get.return_value = {
+        "method": "manual",
+        "created_at": "2026-03-16T00:00:00Z",
+    }
+    resp = client.get("/api/graph/triples/provenance", params={
+        "subject": "http://keplai.io/entity/Mehdi",
+        "predicate": "http://keplai.io/ontology/founded",
+        "obj": "http://keplai.io/entity/BrandPulse",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["method"] == "manual"
+
+
+def test_get_provenance_not_found(client, mock_graph):
+    mock_graph.provenance.get.return_value = None
+    resp = client.get("/api/graph/triples/provenance", params={
+        "subject": "x", "predicate": "y", "obj": "z",
+    })
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+def test_get_provenance_no_store(client, mock_graph):
+    mock_graph.provenance = None
+    resp = client.get("/api/graph/triples/provenance", params={
+        "subject": "x", "predicate": "y", "obj": "z",
+    })
+    assert resp.status_code == 200
+    assert resp.json() is None
