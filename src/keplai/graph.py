@@ -281,34 +281,16 @@ class KeplAI:
         obj: str | int | float | None = None,
     ) -> list[dict[str, str]]:
         """Query triples with optional filters. Returns list of {s, p, o} dicts."""
-        s = self._to_entity_uri(subject).n3() if subject else "?s"
-        p = self._to_predicate_uri(predicate).n3() if predicate else "?p"
-        o = self._to_object(obj).n3() if obj is not None else "?o"
-
-        sparql = f"SELECT ?s ?p ?o WHERE {{ {s} {p} {o} . }}"
-
-        # Bind concrete values back to the variable names for uniform results
+        binds: list[str] = []
         if subject:
-            sparql = sparql.replace(self._to_entity_uri(subject).n3(), f"{self._to_entity_uri(subject).n3()}")
-            sparql = f"SELECT ?s ?p ?o WHERE {{ BIND({self._to_entity_uri(subject).n3()} AS ?s) ?s {p} {o} . }}"
-        if predicate and not subject:
-            sparql = f"SELECT ?s ?p ?o WHERE {{ ?s {p} {o} . BIND({self._to_predicate_uri(predicate).n3()} AS ?p) }}"
-        if subject and predicate:
-            sparql = (
-                f"SELECT ?s ?p ?o WHERE {{ "
-                f"BIND({self._to_entity_uri(subject).n3()} AS ?s) "
-                f"BIND({self._to_predicate_uri(predicate).n3()} AS ?p) "
-                f"?s ?p {o} . }}"
-            )
-        if subject and predicate and obj is not None:
-            o_val = self._to_object(obj)
-            sparql = (
-                f"SELECT ?s ?p ?o WHERE {{ "
-                f"BIND({self._to_entity_uri(subject).n3()} AS ?s) "
-                f"BIND({self._to_predicate_uri(predicate).n3()} AS ?p) "
-                f"BIND({o_val.n3()} AS ?o) "
-                f"?s ?p ?o . }}"
-            )
+            binds.append(f"BIND({self._to_entity_uri(subject).n3()} AS ?s)")
+        if predicate:
+            binds.append(f"BIND({self._to_predicate_uri(predicate).n3()} AS ?p)")
+        if obj is not None:
+            binds.append(f"BIND({self._to_object(obj).n3()} AS ?o)")
+
+        bind_clause = " ".join(binds)
+        sparql = f"SELECT ?s ?p ?o WHERE {{ {bind_clause} ?s ?p ?o . }}"
 
         return self._execute_query(sparql)
 

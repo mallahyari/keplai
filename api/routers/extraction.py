@@ -30,16 +30,24 @@ def list_entities(graph: KeplAI = Depends(get_graph)):
     return graph.disambiguator.get_all_entities()
 
 
-@router.get("/entities/{name}/similar", response_model=list[SimilarEntityOut])
+@router.get("/entities/{name:path}/similar", response_model=list[SimilarEntityOut])
 async def similar_entities(name: str, graph: KeplAI = Depends(get_graph)):
     return await graph.disambiguator.get_similar(name)
 
 
-@router.get("/entities/{name}/context", response_model=EntityContextResponse)
+@router.get("/entities/{name:path}/context", response_model=EntityContextResponse)
 async def entity_context(name: str, graph: KeplAI = Depends(get_graph)):
     # Triples where entity is subject or object
-    subj_rows = graph.find(subject=name)
-    obj_rows = graph.find(obj=name)
+    # Wrap in try/except: entity names that are literals (contain spaces, etc.)
+    # produce invalid URIs in _to_entity_uri, causing rdflib/SPARQL errors.
+    try:
+        subj_rows = graph.find(subject=name)
+    except Exception:
+        subj_rows = []
+    try:
+        obj_rows = graph.find(obj=name)
+    except Exception:
+        obj_rows = []
 
     triples_as_subject = [
         {"subject": r["s"], "predicate": r["p"], "object": r["o"]}

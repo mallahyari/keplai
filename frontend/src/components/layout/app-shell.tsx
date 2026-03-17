@@ -27,14 +27,14 @@ export function AppShell({ currentRoute, onNavigate, headerAction, children }: A
 
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Top header bar */}
-        <header className="flex items-center justify-between h-14 border-b px-6 shrink-0 bg-background">
+        <header className="flex items-center justify-between h-12 border-b px-4 shrink-0 bg-background">
           <h1 className="text-lg font-semibold">{pageTitle}</h1>
           {headerAction && <div>{headerAction}</div>}
         </header>
 
         {/* Content area */}
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1200px] p-6">
+          <div className="px-4 py-3">
             {children}
           </div>
         </main>
