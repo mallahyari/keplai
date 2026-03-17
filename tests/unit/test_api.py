@@ -260,3 +260,25 @@ def test_get_provenance_no_store(client, mock_graph):
     })
     assert resp.status_code == 200
     assert resp.json() is None
+
+
+# -- Entity context endpoints --
+
+def test_get_entity_context(client, mock_graph):
+    def find_side_effect(subject=None, predicate=None, obj=None):
+        if subject == "Mehdi":
+            return [{"s": "http://keplai.io/entity/Mehdi", "p": "http://keplai.io/ontology/founded", "o": "http://keplai.io/entity/BrandPulse"}]
+        if obj == "Mehdi":
+            return [{"s": "http://keplai.io/entity/Alice", "p": "http://keplai.io/ontology/knows", "o": "http://keplai.io/entity/Mehdi"}]
+        return []
+    mock_graph.find.side_effect = find_side_effect
+    mock_graph.disambiguator.get_similar.return_value = [
+        {"name": "MehdiAllahyari", "score": 0.95}
+    ]
+    resp = client.get("/api/entities/Mehdi/context")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["entity"] == "Mehdi"
+    assert len(data["triples_as_subject"]) == 1
+    assert len(data["triples_as_object"]) == 1
+    assert len(data["similar_entities"]) == 1
