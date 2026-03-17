@@ -35,7 +35,7 @@ export function TripleDetailPanel({ triple, onClose }: TripleDetailPanelProps) {
 
   // Load provenance
   useEffect(() => {
-    setProvLoading(true);
+    setProvLoading(true); // eslint-disable-line react-hooks/set-state-in-effect -- reset loading state on dependency change
     setProvError(undefined);
     api
       .getTripleProvenance(triple.subject, triple.predicate, triple.object)
@@ -46,7 +46,7 @@ export function TripleDetailPanel({ triple, onClose }: TripleDetailPanelProps) {
 
   // Load subject context
   useEffect(() => {
-    setSubjectLoading(true);
+    setSubjectLoading(true); // eslint-disable-line react-hooks/set-state-in-effect -- reset loading state on dependency change
     setSubjectError(undefined);
     api
       .getEntityContext(triple.subject)
@@ -57,7 +57,7 @@ export function TripleDetailPanel({ triple, onClose }: TripleDetailPanelProps) {
 
   // Load object context
   useEffect(() => {
-    setObjectLoading(true);
+    setObjectLoading(true); // eslint-disable-line react-hooks/set-state-in-effect -- reset loading state on dependency change
     setObjectError(undefined);
     api
       .getEntityContext(triple.object)
