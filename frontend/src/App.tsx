@@ -17,7 +17,7 @@ function App() {
   let page: React.ReactNode;
   switch (route) {
     case "/triples":
-      page = <TriplesPage />;
+      page = <TriplesPage onNavigate={navigate} />;
       break;
     case "/ontology":
       page = <OntologyPage />;
