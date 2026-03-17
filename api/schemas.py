@@ -153,3 +153,24 @@ class StatsResponse(BaseModel):
     ontology_count: int
     class_count: int
     property_count: int
+
+
+# -- Provenance schemas --
+
+class ProvenanceResponse(BaseModel):
+    method: str
+    created_at: str
+    source_text: str | None = None
+    extraction_mode: str | None = None
+    ontology_source: str | None = None
+    disambiguation: DisambiguationInfo | None = None
+
+
+# -- Entity context schemas --
+
+class EntityContextResponse(BaseModel):
+    entity: str
+    triples_as_subject: list[TripleOut]
+    triples_as_object: list[TripleOut]
+    entity_type: str | None = None
+    similar_entities: list[SimilarEntityOut]
