@@ -170,7 +170,7 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
               <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("object")}>
                 Object{sortIndicator("object")}
               </TableHead>
-              <TableHead className="w-[50px]" />
+              <TableHead className="w-12.5" />
             </TableRow>
           </TableHeader>
           <TableBody>
