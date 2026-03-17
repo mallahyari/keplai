@@ -47,3 +47,6 @@ class KeplAISettings(BaseSettings):
 
     # Qdrant
     qdrant_path: str | None = None  # None = in-memory
+
+    # Provenance
+    provenance_path: str | None = None  # None = provenance disabled
