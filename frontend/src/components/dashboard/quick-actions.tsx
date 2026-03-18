@@ -14,23 +14,19 @@ export function QuickActions({ onNavigate }: QuickActionsProps) {
   ];
 
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="p-4 border-b">
-        <h3 className="text-sm font-medium">Quick Actions</h3>
-      </div>
-      <div className="p-4 grid grid-cols-2 gap-2">
-        {actions.map((a) => (
-          <Button
-            key={a.href}
-            variant="outline"
-            className="flex items-center gap-2 h-auto py-3 justify-start"
-            onClick={() => onNavigate(a.href)}
-          >
-            <a.icon className="h-4 w-4" />
-            <span className="text-xs">{a.label}</span>
-          </Button>
-        ))}
-      </div>
+    <div className="flex items-center gap-2">
+      {actions.map((a) => (
+        <Button
+          key={a.href}
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => onNavigate(a.href)}
+        >
+          <a.icon className="h-3.5 w-3.5" />
+          {a.label}
+        </Button>
+      ))}
     </div>
   );
 }

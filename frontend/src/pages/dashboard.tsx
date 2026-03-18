@@ -57,11 +57,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         />
       </div>
 
-      {/* Middle row */}
-      <div className="grid lg:grid-cols-[3fr_2fr] gap-4">
-        <RecentTriples onNavigate={onNavigate} />
-        <QuickActions onNavigate={onNavigate} />
-      </div>
+      {/* Quick actions */}
+      <QuickActions onNavigate={onNavigate} />
+
+      {/* Recent triples — full width */}
+      <RecentTriples onNavigate={onNavigate} />
 
       {/* Ontology overview */}
       <OntologyOverview onNavigate={onNavigate} />
