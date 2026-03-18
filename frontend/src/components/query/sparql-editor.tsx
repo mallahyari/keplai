@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { EditorView } from "@codemirror/view";
-import { basicSetup } from "@codemirror/basic-setup";
 import { EditorState } from "@codemirror/state";
+import { basicSetup } from "codemirror";
 import { sql } from "@codemirror/lang-sql";
 
 interface SparqlEditorProps {
