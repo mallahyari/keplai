@@ -174,6 +174,18 @@ class NLQueryEngine:
         sparql = re.sub(r"\s*```$", "", sparql.strip())
         sparql = sparql.strip()
 
+        # Safety net: inject standard prefixes if the LLM used them without declaring
+        _STANDARD_PREFIXES = {
+            "rdfs:": "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>",
+            "rdf:": "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>",
+            "owl:": "PREFIX owl: <http://www.w3.org/2002/07/owl#>",
+            "xsd:": "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+            "skos:": "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>",
+        }
+        for prefix, declaration in _STANDARD_PREFIXES.items():
+            if prefix in sparql and declaration not in sparql:
+                sparql = declaration + "\n" + sparql
+
         # Safety net: if the LLM forgot the GRAPH clause, inject one.
         # All triples live in named graphs; querying the default graph returns nothing.
         if "GRAPH" not in sparql.upper():
