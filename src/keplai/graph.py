@@ -301,25 +301,51 @@ class KeplAI:
         obj: str | int | float,
         graph_uri: str | None = None,
     ) -> None:
-        """Remove a single triple from a named graph."""
-        s = self._to_entity_uri(subject)
-        p = self._to_predicate_uri(predicate)
-        o = self._to_object(obj)
-        target = graph_uri or self._settings.data_graph
-        sparql = f"DELETE DATA {{ GRAPH <{target}> {{ {s.n3()} {p.n3()} {o.n3()} }} }}"
-        self._execute_update(sparql)
-        logger.debug("Deleted triple: %s %s %s (graph: %s)", subject, predicate, obj, target)
+        """Remove a single triple. Deletes from a specific graph if provided,
+        otherwise removes matching triples from all graphs (matching the
+        cross-graph query used by get_all_triples).
+
+        Uses str() comparison in FILTER clauses to match triples regardless of
+        language tags, datatypes, or URI-vs-literal ambiguity — since the API
+        layer only has the string values returned by _execute_query."""
+        obj_str = str(obj)
+        # Escape quotes in the object value for safe embedding in SPARQL
+        obj_escaped = obj_str.replace("\\", "\\\\").replace('"', '\\"')
+        filter_clause = (
+            f"FILTER(str(?s) = \"{subject}\" && "
+            f"str(?p) = \"{predicate}\" && "
+            f"str(?o) = \"{obj_escaped}\")"
+        )
+        if graph_uri:
+            self._execute_update(
+                f"DELETE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }} "
+                f"WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} . {filter_clause} }}"
+            )
+        else:
+            # Delete from default graph and all named graphs
+            self._execute_update(
+                f"DELETE {{ ?s ?p ?o }} WHERE {{ ?s ?p ?o . {filter_clause} }}"
+            )
+            self._execute_update(
+                f"DELETE {{ GRAPH ?g {{ ?s ?p ?o }} }} "
+                f"WHERE {{ GRAPH ?g {{ ?s ?p ?o }} . {filter_clause} }}"
+            )
+        logger.debug("Deleted triple: %s %s %s (graph: %s)", subject, predicate, obj, graph_uri or "all")
         if self.provenance is not None:
+            s = self._to_entity_uri(subject)
+            p = self._to_predicate_uri(predicate)
+            o = self._to_object(obj)
             self.provenance.delete(str(s), str(p), str(o))
 
     def get_all_triples(self) -> list[dict[str, str]]:
-        """Return every triple across all named graphs (excluding metadata)."""
+        """Return every triple across all named graphs (excluding metadata).
+
+        Only queries named graphs — avoids duplicates from Fuseki's union
+        default graph which mirrors named-graph triples as virtual entries."""
         return self._execute_query(
             f"SELECT ?s ?p ?o WHERE {{ "
-            f"{{ ?s ?p ?o }} "
-            f"UNION "
-            f"{{ GRAPH ?g {{ ?s ?p ?o }} "
-            f"   FILTER(?g != <{self._settings.metadata_graph}>) }} "
+            f"GRAPH ?g {{ ?s ?p ?o }} "
+            f"FILTER(?g != <{self._settings.metadata_graph}>) "
             f"}}"
         )
 

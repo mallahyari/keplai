@@ -59,17 +59,17 @@ class TestAddGeneratesSPARQL:
 
 class TestDeleteGeneratesSPARQL:
     @patch("keplai.graph.SPARQLWrapper")
-    def test_delete_generates_delete_data(self, mock_wrapper_cls):
+    def test_delete_uses_str_filter(self, mock_wrapper_cls):
         mock_instance = MagicMock()
         mock_wrapper_cls.return_value = mock_instance
 
         g = _make_graph()
         g.delete("Mehdi", "founded", "BrandPulse")
 
-        call_args = mock_instance.setQuery.call_args[0][0]
-        assert "DELETE DATA" in call_args
-        assert "GRAPH" in call_args
-        assert "keplai.io/entity/Mehdi" in call_args
+        # Without graph_uri, delete issues two FILTER-based calls
+        calls = [c[0][0] for c in mock_instance.setQuery.call_args_list]
+        assert any('str(?s) = "Mehdi"' in c and 'str(?o) = "BrandPulse"' in c for c in calls)
+        assert any("GRAPH ?g" in c for c in calls)
 
     @patch("keplai.graph.SPARQLWrapper")
     def test_delete_with_explicit_graph_uri(self, mock_wrapper_cls):
@@ -81,6 +81,7 @@ class TestDeleteGeneratesSPARQL:
 
         call_args = mock_instance.setQuery.call_args[0][0]
         assert "GRAPH <http://example.org/graph/test>" in call_args
+        assert 'str(?s) = "Mehdi"' in call_args
 
 
 class TestAddLiteralObject:
