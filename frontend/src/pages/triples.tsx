@@ -49,6 +49,11 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Triple | null>(null);
 
+  // Batch selection
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+
   // Detail panel
   const [selectedTriple, setSelectedTriple] = useState<Triple | null>(null);
 
@@ -90,8 +95,8 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [filterSubject, filterPredicate, filterObject]);
+  // Reset page and selection when filters change
+  useEffect(() => { setPage(1); setSelected(new Set()); }, [filterSubject, filterPredicate, filterObject]);
 
   const toggleSort = (col: "subject" | "predicate" | "object") => {
     if (sortCol === col) {
@@ -132,6 +137,54 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
     }
   };
 
+  const toggleSelect = (idx: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const allOnPageSelected = paginated.length > 0 && paginated.every((_, i) => selected.has((page - 1) * PAGE_SIZE + i));
+
+  const toggleSelectAll = () => {
+    if (allOnPageSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        paginated.forEach((_, i) => next.delete((page - 1) * PAGE_SIZE + i));
+        return next;
+      });
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        paginated.forEach((_, i) => next.add((page - 1) * PAGE_SIZE + i));
+        return next;
+      });
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    setBatchDeleting(true);
+    const toDelete = [...selected].map((idx) => filtered[idx]).filter(Boolean);
+    let ok = 0;
+    let fail = 0;
+    for (const t of toDelete) {
+      try {
+        await api.deleteTriple(t);
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    if (ok > 0) toast.success(`Deleted ${ok} triple${ok > 1 ? "s" : ""}`);
+    if (fail > 0) toast.error(`Failed to delete ${fail} triple${fail > 1 ? "s" : ""}`);
+    setSelected(new Set());
+    setSelectedTriple(null);
+    setBatchDeleting(false);
+    refresh();
+  };
+
   const sortIndicator = (col: string) => {
     if (sortCol !== col) return "";
     return sortDir === "asc" ? " ↑" : " ↓";
@@ -154,9 +207,16 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
             <span className="text-xs text-muted-foreground">{triples.length} triples</span>
           )}
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> Add Triple
-        </Button>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <Button size="sm" variant="destructive" disabled={batchDeleting} onClick={() => setBatchDeleteConfirm(true)}>
+              <Trash2 className="h-4 w-4 mr-1" /> Delete {selected.size}
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add Triple
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -175,6 +235,14 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-border accent-primary"
+                    checked={allOnPageSelected && paginated.length > 0}
+                    onChange={toggleSelectAll}
+                  />
+                </TableHead>
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("subject")}>
                   Subject{sortIndicator("subject")}
                 </TableHead>
@@ -184,13 +252,14 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("object")}>
                   Object{sortIndicator("object")}
                 </TableHead>
-                <TableHead className="w-12.5" />
+                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
+                    <TableCell />
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
@@ -199,7 +268,7 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
                 ))
               ) : paginated.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <EmptyState
                       icon={Database}
                       title="No triples yet"
@@ -212,41 +281,54 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
                   </TableCell>
                 </TableRow>
               ) : (
-                paginated.map((t, i) => (
-                  <TableRow
-                    key={i}
-                    className={cn(
-                      "cursor-pointer",
-                      isSelectedTriple(selectedTriple, t) && "bg-accent/30"
-                    )}
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).closest("button")) return;
-                      setSelectedTriple(isSelectedTriple(selectedTriple, t) ? null : t);
-                    }}
-                  >
-                    <TableCell className="font-mono text-sm">{shortName(t.subject)}</TableCell>
-                    <TableCell className="font-mono text-sm">{shortName(t.predicate)}</TableCell>
-                    <TableCell className="font-mono text-sm">{shortName(t.object)}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(t)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                paginated.map((t, i) => {
+                  const globalIdx = (page - 1) * PAGE_SIZE + i;
+                  return (
+                    <TableRow
+                      key={i}
+                      className={cn(
+                        "cursor-pointer",
+                        selected.has(globalIdx) && "bg-accent/20",
+                        isSelectedTriple(selectedTriple, t) && "bg-accent/30"
+                      )}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("input")) return;
+                        setSelectedTriple(isSelectedTriple(selectedTriple, t) ? null : t);
+                      }}
+                    >
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-border accent-primary"
+                          checked={selected.has(globalIdx)}
+                          onChange={() => toggleSelect(globalIdx)}
+                        />
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{shortName(t.subject)}</TableCell>
+                      <TableCell className="font-mono text-sm">{shortName(t.predicate)}</TableCell>
+                      <TableCell className="font-mono text-sm">{shortName(t.object)}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(t)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </div>
 
-        {/* Detail panel */}
-        {selectedTriple && (
-          <TripleDetailPanel
-            triple={selectedTriple}
-            onClose={() => setSelectedTriple(null)}
-          />
-        )}
       </div>
+
+      {/* Detail modal */}
+      {selectedTriple && (
+        <TripleDetailPanel
+          triple={selectedTriple}
+          onClose={() => setSelectedTriple(null)}
+        />
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (
@@ -265,7 +347,7 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
 
       {/* Add triple dialog */}
       {addOpen && (
-        <dialog open className="fixed inset-0 z-50 flex items-center justify-center bg-transparent">
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/50" onClick={() => setAddOpen(false)} />
           <div className="relative rounded-lg border bg-background p-6 shadow-lg w-full max-w-md">
             <h3 className="text-lg font-semibold mb-4">Add Triple</h3>
@@ -290,7 +372,7 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
               </div>
             </form>
           </div>
-        </dialog>
+        </div>
       )}
 
       {/* Delete confirmation */}
@@ -300,6 +382,16 @@ export function TriplesPage({ onNavigate }: TriplesPageProps) {
         title="Delete triple?"
         description={deleteTarget ? `This will remove: ${deleteTarget.subject} → ${deleteTarget.predicate} → ${deleteTarget.object}` : ""}
         onConfirm={() => { if (deleteTarget) handleDelete(deleteTarget); }}
+      />
+
+      {/* Batch delete confirmation */}
+      <ConfirmDialog
+        open={batchDeleteConfirm}
+        onOpenChange={(open) => { if (!open) setBatchDeleteConfirm(false); }}
+        title={`Delete ${selected.size} triple${selected.size > 1 ? "s" : ""}?`}
+        description="This action cannot be undone."
+        confirmLabel={`Delete ${selected.size}`}
+        onConfirm={handleBatchDelete}
       />
     </div>
   );

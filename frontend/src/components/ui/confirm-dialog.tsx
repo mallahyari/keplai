@@ -33,7 +33,7 @@ export function ConfirmDialog({
     <dialog
       ref={ref}
       onClose={handleClose}
-      className="rounded-lg border bg-background p-0 shadow-lg backdrop:bg-black/50"
+      className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-background p-0 shadow-lg backdrop:bg-black/50"
     >
       <div className="p-6 space-y-4 max-w-md">
         <h3 className="text-lg font-semibold">{title}</h3>
