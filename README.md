@@ -175,6 +175,7 @@ graph LR
 | **Graph** | CRUD operations | Add, query, delete RDF triples via SPARQL |
 | **Graph** | Named graph support | Isolate data and ontologies in separate named graphs |
 | **Graph** | Auto-typing | Automatically asserts `rdf:type` from ontology domain/range |
+| **Graph** | Provenance tracking | Record source, timestamp, and method for each triple |
 | **Ontology** | Schema definition | Define OWL classes and properties programmatically |
 | **Ontology** | File import | Import Turtle, RDF/XML, N-Triples, JSON-LD, OWL files |
 | **Ontology** | URL import | Fetch and import remote ontologies (Schema.org, FOAF, etc.) |
@@ -406,8 +407,10 @@ The API server exposes all SDK functionality over HTTP. Base URL: `http://localh
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/graph/status` | Engine health check |
+| `GET` | `/api/graph/stats` | Graph statistics (triple, entity, ontology, class, property counts) |
 | `GET` | `/api/graph/triples/all` | Fetch all triples |
 | `GET` | `/api/graph/triples?subject=...` | Query triples with filters |
+| `GET` | `/api/graph/triples/provenance` | Get provenance for a triple |
 | `POST` | `/api/graph/triples` | Add a triple |
 | `DELETE` | `/api/graph/triples` | Delete a triple |
 
@@ -436,6 +439,7 @@ The API server exposes all SDK functionality over HTTP. Base URL: `http://localh
 | `POST` | `/api/extract/preview` | Preview extraction without storing |
 | `GET` | `/api/entities` | List all entities |
 | `GET` | `/api/entities/{name}/similar` | Find similar entities |
+| `GET` | `/api/entities/{name}/context` | Get entity context (related triples + similar entities) |
 
 ### Query Endpoints (`/api/query`)
 
@@ -472,11 +476,12 @@ curl -X POST http://localhost:8000/api/extract \
 
 ## Web UI
 
-The web interface provides five main pages:
+The web interface provides six main pages:
 
 | Page | Description |
 |------|-------------|
-| **Triples** | View, search, add, and delete triples |
+| **Dashboard** | Overview with stats, quick actions, recent triples, and ontology summary |
+| **Triples** | View, search, add, batch delete triples with detail modal and provenance |
 | **Ontology** | Define classes/properties, import ontologies, manage multi-ontology |
 | **Extraction** | Extract triples from text with strict/open modes, preview with candidates |
 | **Query** | Ask natural language questions, execute SPARQL, view explanations |
@@ -502,6 +507,7 @@ Configuration is managed via environment variables or a `.env` file:
 | `KEPLAI_REASONER` | `OWL` | Inference engine (`OWL`, `RDFS`, or `NONE`) |
 | `KEPLAI_DISAMBIGUATION_THRESHOLD` | `0.90` | Min similarity score for entity matching |
 | `KEPLAI_QDRANT_PATH` | `None` | Qdrant DB path (`None` = in-memory) |
+| `KEPLAI_PROVENANCE_PATH` | `None` | Provenance DB path (`None` = provenance disabled) |
 
 ---
 
@@ -535,6 +541,7 @@ keplai/
 │   ├── extractor.py         # AIExtractor (LLM triple extraction)
 │   ├── nlq.py               # NLQueryEngine (NL-to-SPARQL)
 │   ├── disambiguator.py     # EntityDisambiguator (vector matching)
+│   ├── provenance.py        # ProvenanceStore (triple provenance tracking)
 │   ├── config.py            # KeplAISettings (Pydantic config)
 │   ├── exceptions.py        # Exception hierarchy
 │   ├── cli.py               # CLI entry point
