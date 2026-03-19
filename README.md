@@ -578,4 +578,4 @@ keplai/
 
 ## License
 
-MIT License. See [pyproject.toml](pyproject.toml) for details.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
