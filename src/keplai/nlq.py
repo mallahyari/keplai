@@ -20,6 +20,15 @@ _FORBIDDEN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Standard prefixes auto-injected when the LLM uses them without declaring
+_STANDARD_PREFIXES = {
+    "rdfs:": "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>",
+    "rdf:": "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>",
+    "owl:": "PREFIX owl: <http://www.w3.org/2002/07/owl#>",
+    "xsd:": "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
+    "skos:": "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>",
+}
+
 
 class NLQueryEngine:
     """Translate natural-language questions into SPARQL and execute them."""
@@ -29,16 +38,42 @@ class NLQueryEngine:
         self._graph = graph
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     async def ask(self, question: str) -> dict[str, Any]:
         """Answer a natural-language question against the knowledge graph.
 
-        Returns:
-            {"results": [...], "sparql": "<generated query>"}
+        Pipeline:
+            resolve_entities → map_relations → generate_sparql
+            → validate_predicates → repair (if needed) → execute
         """
         schema = self._graph.ontology.get_schema()
         sample_entities = self._get_sample_entities()
+        graph_predicates = self._get_all_predicates()
 
-        sparql = await self._generate_sparql(question, schema, sample_entities)
+        # Build the full predicate list (schema + graph)
+        all_predicate_info = self._build_predicate_info(schema, graph_predicates)
+        allowed_uris = {p["uri"] for p in all_predicate_info}
+
+        # Step 1: Map natural-language phrases → graph predicates
+        relation_map = await self._map_relations(question, all_predicate_info)
+        logger.info("Relation map: %s", relation_map)
+
+        # Step 2: Generate SPARQL
+        sparql = await self._generate_sparql(
+            question, schema, sample_entities, all_predicate_info, relation_map,
+        )
+        logger.info("Generated SPARQL:\n%s", sparql)
+
+        # Step 3: Validate predicates — repair if any are invalid
+        invalid = self._validate_predicates(sparql, allowed_uris)
+        if invalid:
+            logger.warning("Invalid predicates found: %s — attempting repair", invalid)
+            sparql = await self._repair_sparql(sparql, invalid, sorted(allowed_uris))
+            logger.info("Repaired SPARQL:\n%s", sparql)
+
         self._validate_read_only(sparql)
 
         try:
@@ -49,13 +84,11 @@ class NLQueryEngine:
         return {"results": results, "sparql": sparql}
 
     async def ask_with_explanation(self, question: str) -> dict[str, Any]:
-        """Answer a question and provide an explanation of the results.
-
-        Returns:
-            {"results": [...], "sparql": "<generated query>", "explanation": "..."}
-        """
+        """Answer a question and provide an explanation of the results."""
         answer = await self.ask(question)
-        explanation = await self._explain_results(question, answer["results"], answer["sparql"])
+        explanation = await self._explain_results(
+            question, answer["results"], answer["sparql"],
+        )
         answer["explanation"] = explanation
         return answer
 
@@ -64,16 +97,75 @@ class NLQueryEngine:
         self._validate_read_only(sparql)
         return self._graph._execute_query(sparql)
 
+    # ------------------------------------------------------------------
+    # Step 1: Relation mapping
+    # ------------------------------------------------------------------
+
+    async def _map_relations(
+        self,
+        question: str,
+        predicates: list[dict[str, Any]],
+    ) -> dict[str, str]:
+        """Map natural-language phrases in the question to graph predicates."""
+        if not predicates:
+            return {}
+
+        pred_lines = []
+        for p in predicates:
+            uri = p["uri"]
+            name = p["name"]
+            desc = p.get("description", name)
+            pred_lines.append(f"- {name} <{uri}>: {desc}")
+
+        system_prompt = (
+            "You are mapping natural language phrases to knowledge graph predicates.\n\n"
+            f"Available predicates:\n{chr(10).join(pred_lines)}\n\n"
+            "Task:\n"
+            "Map phrases in the user's question to the closest predicate from the list above.\n\n"
+            "Rules:\n"
+            "- Only use predicates from the list\n"
+            "- Do NOT invent new predicates\n"
+            "- If no predicate matches a phrase, omit it\n\n"
+            "Return ONLY a JSON object mapping phrases to predicate URIs.\n"
+            'Example: {"works at": "http://keplai.io/ontology/worksAt", '
+            '"founded": "http://keplai.io/ontology/founded"}'
+        )
+
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._settings.openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": question},
+                ],
+                temperature=0.0,
+            )
+            raw = response.choices[0].message.content or "{}"
+            raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+            raw = re.sub(r"\s*```$", "", raw.strip())
+            result = json.loads(raw)
+            if not isinstance(result, dict):
+                return {}
+            return result
+        except Exception:
+            logger.debug("Relation mapping failed, continuing without it", exc_info=True)
+            return {}
+
+    # ------------------------------------------------------------------
+    # Step 2: SPARQL generation
+    # ------------------------------------------------------------------
+
     async def _generate_sparql(
         self,
         question: str,
         schema: dict[str, Any],
         sample_entities: list[str],
+        all_predicate_info: list[dict[str, Any]],
+        relation_map: dict[str, str],
     ) -> str:
         classes = schema.get("classes", [])
-        schema_properties = schema.get("properties", [])
 
-        # Group classes by namespace for clarity
+        # Group classes by namespace
         namespaces: dict[str, list[str]] = {}
         for c in classes:
             uri = c.get("uri", "")
@@ -88,28 +180,20 @@ class NLQueryEngine:
             for item in items:
                 class_lines.append(f"    - {item}")
 
-        # Build comprehensive property list: schema properties + all predicates in graph
-        schema_prop_uris = {p.get("uri", "") for p in schema_properties}
+        # Build enriched property lines
         prop_lines = []
-        for p in schema_properties:
-            uri = p.get("uri", "")
-            name = p.get("name", "")
-            prop_lines.append(
-                f"  - {name} <{uri}>: "
-                f"domain={p.get('domain', '?')}, range={p.get('range', '?')}"
-            )
-        # Add predicates actually used in triples but not in the ontology schema
-        graph_predicates = self._get_all_predicates()
-        for pred_uri in graph_predicates:
-            if pred_uri not in schema_prop_uris:
-                # Extract short name from URI
-                if "#" in pred_uri:
-                    short = pred_uri.split("#")[-1]
-                elif "/" in pred_uri:
-                    short = pred_uri.split("/")[-1]
-                else:
-                    short = pred_uri
-                prop_lines.append(f"  - {short} <{pred_uri}>")
+        for p in all_predicate_info:
+            line = f"  - {p['name']} <{p['uri']}>"
+            extras = []
+            if p.get("domain"):
+                extras.append(f"domain={p['domain']}")
+            if p.get("range"):
+                extras.append(f"range={p['range']}")
+            if p.get("description") and p["description"] != p["name"]:
+                extras.append(f'description: "{p["description"]}"')
+            if extras:
+                line += f" ({', '.join(extras)})"
+            prop_lines.append(line)
 
         has_multiple_namespaces = len(namespaces) > 1
         graph_instruction = (
@@ -117,12 +201,23 @@ class NLQueryEngine:
             "  Use GRAPH clauses if needed to query within specific named graphs.\n"
         ) if has_multiple_namespaces else ""
 
-        # Resolve entity names mentioned in the question against the graph
+        # Resolve entity names
         resolved_entities = await self._resolve_entities(question, sample_entities)
         entity_hint = ""
         if resolved_entities:
             mappings = ", ".join(f'"{k}" → entity:{v}' for k, v in resolved_entities.items())
             entity_hint = f"ENTITY MAPPINGS (use these exact entity names):\n{mappings}\n\n"
+
+        # Relation mapping hint
+        relation_hint = ""
+        if relation_map:
+            lines = []
+            for phrase, uri in relation_map.items():
+                lines.append(f'  "{phrase}" → <{uri}>')
+            relation_hint = (
+                "RELATION MAPPINGS (use these EXACTLY when constructing the query):\n"
+                + chr(10).join(lines) + "\n\n"
+            )
 
         system_prompt = (
             "You are a SPARQL query generator for a knowledge graph.\n\n"
@@ -135,11 +230,13 @@ class NLQueryEngine:
             f"{chr(10).join(prop_lines) if prop_lines else '  (none)'}\n\n"
             f"Sample entities: {', '.join(sample_entities[:20]) if sample_entities else '(none)'}\n\n"
             f"{entity_hint}"
+            f"{relation_hint}"
             "RULES:\n"
             "- Generate ONLY a SELECT query. Never INSERT, DELETE, DROP, or modify data.\n"
             "- CRITICAL: You MUST ONLY use property URIs listed above. NEVER invent or guess\n"
             "  property names like birthDate, hasName, etc. If no listed property matches the\n"
             "  question, pick the closest one from the list above.\n"
+            "- If RELATION MAPPINGS are provided above, you MUST use those exact URIs.\n"
             "- IMPORTANT: Use the exact full URIs shown above for classes and properties.\n"
             "  Do NOT assume all URIs use the default namespace — use the URIs from the schema.\n"
             "- For entity instances, use the default entity namespace unless you see otherwise.\n"
@@ -169,34 +266,102 @@ class NLQueryEngine:
             raise QueryError(f"LLM call failed during SPARQL generation: {exc}") from exc
 
         sparql = response.choices[0].message.content or ""
-        # Strip markdown code fences if present
-        sparql = re.sub(r"^```(?:sparql)?\s*", "", sparql.strip())
-        sparql = re.sub(r"\s*```$", "", sparql.strip())
-        sparql = sparql.strip()
-
-        # Safety net: inject standard prefixes if the LLM used them without declaring
-        _STANDARD_PREFIXES = {
-            "rdfs:": "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>",
-            "rdf:": "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>",
-            "owl:": "PREFIX owl: <http://www.w3.org/2002/07/owl#>",
-            "xsd:": "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
-            "skos:": "PREFIX skos: <http://www.w3.org/2004/02/skos/core#>",
-        }
-        for prefix, declaration in _STANDARD_PREFIXES.items():
-            if prefix in sparql and declaration not in sparql:
-                sparql = declaration + "\n" + sparql
-
-        # Safety net: if the LLM forgot the GRAPH clause, inject one.
-        # All triples live in named graphs; querying the default graph returns nothing.
-        if "GRAPH" not in sparql.upper():
-            sparql = re.sub(
-                r"(WHERE\s*\{)(.*?)(\}\s*)$",
-                r"\1 GRAPH ?g {\2}\3",
-                sparql,
-                flags=re.DOTALL | re.IGNORECASE,
-            )
-
+        sparql = self._postprocess_sparql(sparql)
         return sparql
+
+    # ------------------------------------------------------------------
+    # Step 3: Predicate validation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_predicates(sparql: str, allowed_uris: set[str]) -> list[str]:
+        """Extract predicate URIs from SPARQL and return any not in allowed set."""
+        # Match full URIs in angle brackets
+        all_uris = set(re.findall(r"<(https?://[^>]+)>", sparql))
+
+        # Also resolve prefixed names (PREFIX foo: <ns> ... foo:bar)
+        prefixes: dict[str, str] = {}
+        for match in re.finditer(r"PREFIX\s+(\w+):\s*<([^>]+)>", sparql, re.IGNORECASE):
+            prefixes[match.group(1)] = match.group(2)
+
+        for match in re.finditer(r"(?<!\w)(\w+):(\w+)", sparql):
+            prefix, local = match.group(1), match.group(2)
+            if prefix.upper() == "PREFIX":
+                continue
+            if prefix in prefixes:
+                all_uris.add(prefixes[prefix] + local)
+
+        # Filter: only check URIs that look like predicates (used in triple patterns)
+        # Skip well-known non-predicate URIs (namespaces, entity URIs, graph URIs)
+        well_known = {
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+            "http://www.w3.org/2000/01/rdf-schema#label",
+            "http://www.w3.org/2000/01/rdf-schema#comment",
+            "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+            "http://www.w3.org/2002/07/owl#",
+        }
+
+        invalid = []
+        for uri in all_uris:
+            # Skip well-known standard URIs
+            if any(uri.startswith(wk) or uri == wk for wk in well_known):
+                continue
+            # Skip entity namespace URIs (these are subjects/objects, not predicates)
+            if uri.startswith(str(allowed_uris).split("/entity/")[0] + "/entity/" if "/entity/" in str(allowed_uris) else "___never_match___"):
+                continue
+            # Check if this URI is in our allowed predicate set
+            if uri in allowed_uris:
+                continue
+            # Only flag as invalid if it looks like an ontology/predicate URI
+            # (not a namespace declaration or entity reference)
+            if "/ontology/" in uri or "/property/" in uri or "#" in uri:
+                invalid.append(uri)
+
+        return invalid
+
+    # ------------------------------------------------------------------
+    # Step 4: Repair loop
+    # ------------------------------------------------------------------
+
+    async def _repair_sparql(
+        self,
+        sparql: str,
+        invalid_predicates: list[str],
+        allowed_predicates: list[str],
+    ) -> str:
+        """Ask the LLM to fix a SPARQL query that uses invalid predicates."""
+        invalid_lines = "\n".join(f"  - {u}" for u in invalid_predicates)
+        allowed_lines = "\n".join(f"  - {u}" for u in allowed_predicates)
+
+        system_prompt = (
+            "You are fixing a SPARQL query that contains invalid predicates.\n\n"
+            f"Invalid predicates found in the query:\n{invalid_lines}\n\n"
+            f"Allowed predicates (use ONLY these):\n{allowed_lines}\n\n"
+            "Fix the query by replacing each invalid predicate with the closest "
+            "allowed predicate from the list above.\n"
+            "Return ONLY the corrected SPARQL query, no explanation."
+        )
+
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._settings.openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": sparql},
+                ],
+                temperature=0.0,
+            )
+        except OpenAIError as exc:
+            logger.error("Repair LLM call failed: %s", exc)
+            return sparql  # Return original if repair fails
+
+        repaired = response.choices[0].message.content or sparql
+        repaired = self._postprocess_sparql(repaired)
+        return repaired
+
+    # ------------------------------------------------------------------
+    # Explanation
+    # ------------------------------------------------------------------
 
     async def _explain_results(
         self,
@@ -228,6 +393,95 @@ class NLQueryEngine:
             logger.error("OpenAI call failed during explanation: %s", exc)
             raise QueryError(f"LLM call failed during explanation: {exc}") from exc
         return response.choices[0].message.content or ""
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _build_predicate_info(
+        self,
+        schema: dict[str, Any],
+        graph_predicates: list[str],
+    ) -> list[dict[str, Any]]:
+        """Merge schema properties with graph predicates into a unified list."""
+        schema_properties = schema.get("properties", [])
+        schema_uris = {p.get("uri", "") for p in schema_properties}
+
+        result = []
+        for p in schema_properties:
+            uri = p.get("uri", "")
+            name = p.get("name", "")
+            result.append({
+                "uri": uri,
+                "name": name,
+                "domain": p.get("domain"),
+                "range": p.get("range"),
+                "description": self._infer_description(name),
+            })
+
+        for pred_uri in graph_predicates:
+            if pred_uri not in schema_uris:
+                if "#" in pred_uri:
+                    short = pred_uri.split("#")[-1]
+                elif "/" in pred_uri:
+                    short = pred_uri.split("/")[-1]
+                else:
+                    short = pred_uri
+                result.append({
+                    "uri": pred_uri,
+                    "name": short,
+                    "domain": None,
+                    "range": None,
+                    "description": self._infer_description(short),
+                })
+
+        return result
+
+    @staticmethod
+    def _infer_description(name: str) -> str:
+        """Generate a human-readable description from a predicate name."""
+        # Split camelCase/PascalCase into words
+        words = re.sub(r"([a-z])([A-Z])", r"\1 \2", name).lower()
+        # Common predicate patterns
+        known = {
+            "founded": "a person started or created something",
+            "works at": "a person is employed by an organization",
+            "worksat": "a person is employed by an organization",
+            "born on": "the date someone was born",
+            "bornon": "the date someone was born",
+            "born in": "the place where someone was born",
+            "bornin": "the place where someone was born",
+            "knows": "one person knows another person",
+            "type": "the class or category of an entity",
+            "label": "the human-readable name of an entity",
+            "industry": "the industry sector of an organization",
+            "located in": "the location of something",
+            "locatedin": "the location of something",
+        }
+        return known.get(words, words)
+
+    def _postprocess_sparql(self, sparql: str) -> str:
+        """Apply safety-net transformations to generated SPARQL."""
+        # Strip markdown code fences
+        sparql = re.sub(r"^```(?:sparql)?\s*", "", sparql.strip())
+        sparql = re.sub(r"\s*```$", "", sparql.strip())
+        sparql = sparql.strip()
+
+        # Inject standard prefixes if used without declaration
+        for prefix, declaration in _STANDARD_PREFIXES.items():
+            if prefix in sparql and declaration not in sparql:
+                sparql = declaration + "\n" + sparql
+
+        # Inject GRAPH clause if missing
+        if "GRAPH" not in sparql.upper():
+            sparql = re.sub(
+                r"(WHERE\s*\{)(.*?)(\}\s*)$",
+                r"\1 GRAPH ?g {\2}\3",
+                sparql,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+
+        return sparql
 
     def _get_all_predicates(self) -> list[str]:
         """Fetch all distinct predicate URIs used in actual triples."""
@@ -265,14 +519,11 @@ class NLQueryEngine:
     async def _resolve_entities(
         self, question: str, sample_entities: list[str],
     ) -> dict[str, str]:
-        """Extract likely entity mentions from the question and resolve them
-        against the graph using the disambiguator's vector similarity search.
-
-        Returns a mapping of mention → matched entity name (short name)."""
+        """Extract entity mentions from the question and resolve them via
+        the disambiguator's vector similarity search."""
         if not sample_entities:
             return {}
 
-        # Use the LLM to extract entity mentions from the question
         try:
             response = await self._client.chat.completions.create(
                 model=self._settings.openai_model,
@@ -295,7 +546,6 @@ class NLQueryEngine:
         except Exception:
             return {}
 
-        # Resolve each mention against the graph via disambiguator
         resolved: dict[str, str] = {}
         for mention in mentions:
             if not isinstance(mention, str) or not mention.strip():
@@ -307,7 +557,6 @@ class NLQueryEngine:
                     similar = await similar
                 if similar and len(similar) > 0:
                     best = similar[0]
-                    # Accept if similarity score is reasonable
                     name = best.get("name", best.get("entity", ""))
                     score = best.get("score", 0)
                     if name and (score is None or score >= 0.3):
