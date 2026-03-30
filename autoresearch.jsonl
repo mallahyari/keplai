@@ -1,1 +1,2 @@
 {"type":"config","name":"Optimize unit test runtime while maintaining correctness","metricName":"test_runtime_ms","metricUnit":"ms","bestDirection":"lower"}
+{"run":1,"commit":"8430a5a","metric":850,"metrics":{},"status":"keep","description":"Baseline test runtime - 110 tests passed","timestamp":1774891169285,"segment":0,"confidence":null,"iterationTokens":151,"asi":{"hypothesis":"Baseline measurement - establish current test runtime","pass_rate":"100%","tests_count":110}}
