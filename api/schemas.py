@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TripleIn(BaseModel):
@@ -58,7 +58,7 @@ class SchemaOut(BaseModel):
 # -- Extraction schemas --
 
 class ExtractionRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=100000)  # 100 KB
     mode: str = "strict"
 
 
@@ -103,7 +103,7 @@ class SimilarEntityOut(BaseModel):
 # -- Query schemas --
 
 class AskRequest(BaseModel):
-    question: str
+    question: str = Field(..., max_length=10000)  # 10 KB
 
 
 class SparqlRequest(BaseModel):
