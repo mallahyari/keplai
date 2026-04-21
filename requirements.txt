@@ -13,3 +13,6 @@ pydantic-settings>=2.0.0
 # Phase 3: AI Extraction + Entity Resolution
 openai>=1.30.0
 qdrant-client>=1.9.0
+
+# Rate limiting (CR #17)
+slowapi>=0.1.9
