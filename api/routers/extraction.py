@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from api.dependencies import get_graph
 from api.main import limiter
@@ -18,13 +18,13 @@ router = APIRouter(prefix="/api", tags=["extraction"])
 
 @limiter.limit("100/hour")
 @router.post("/extract", response_model=list[ExtractedTripleOut])
-async def extract_and_store(req: ExtractionRequest, graph: KeplAI = Depends(get_graph)):
+async def extract_and_store(request: Request, req: ExtractionRequest, graph: KeplAI = Depends(get_graph)):
     return await graph.extract_and_store(req.text, mode=req.mode)
 
 
 @limiter.limit("100/hour")
 @router.post("/extract/preview", response_model=list[PreviewTripleOut])
-async def extract_preview(req: ExtractionRequest, graph: KeplAI = Depends(get_graph)):
+async def extract_preview(request: Request, req: ExtractionRequest, graph: KeplAI = Depends(get_graph)):
     return await graph.extract_preview(req.text, mode=req.mode)
 
 
